@@ -1,0 +1,13 @@
+[package]
+name = "aoc-pico"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rp-pico = { version = "0.9.0", features = ["critical-section-impl"] }
+rtic = { version = "2.1.1", features = ["thumbv6-backend"] }
+defmt = "0.3.8"
+defmt-rtt = "0.4.1"
+panic-probe = { version = "0.3.2", features = ["print-defmt"] }
+embedded-hal = "1.0.0"
+embedded-io-async = "0.6.1"
