@@ -3,12 +3,12 @@
 
 extern crate alloc;
 
-
 use embedded_alloc::LlffHeap as Heap;
 use panic_probe as _;
 use defmt_rtt as _;
 
 mod console;
+mod aoc;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -23,7 +23,7 @@ unsafe fn init_heap() {
 
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
-    use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock, Timer};
+    use alloc::string::String;use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock, Timer};
     use rp_pico::hal::clocks::init_clocks_and_plls;
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
     use rp_pico::hal::gpio::{FunctionUart, PullDown};
@@ -31,6 +31,7 @@ mod app {
     use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
     use embedded_hal::delay::DelayNs;
+    use crate::aoc::AocRunner;
     use crate::console::Console;
     use crate::init_heap;
 
@@ -89,6 +90,8 @@ mod app {
     #[idle(shared = [uart, timer])]
     fn idle(mut cx: idle::Context) -> ! {
         let mut console = Console::new();
+        let mut aoc_runner = AocRunner::new();
+        let mut current_line = String::new();
         loop {
             cx.shared.uart.lock(|uart| {
                 const CHUNK_SIZE : usize = 64;
@@ -97,11 +100,22 @@ mod app {
                     match uart.read_raw(&mut buf) {
                         Ok(count) => {
                             console.push(&buf[..count]);
-                            while let Some(line) = console.pop_line() {
+                            while let Some(mut line) = console.pop_line() {
                                 uart.write_raw(line.as_bytes()).unwrap();
                                 uart.write_raw(b"\r\n").unwrap();
+                                if !current_line.is_empty() {
+                                    current_line.push_str(&line);
+                                    core::mem::swap(&mut current_line, &mut line);
+                                    current_line.clear();
+                                }
+                                for result in aoc_runner.push_line(line) {
+                                    uart.write_raw(result.as_bytes()).unwrap();
+                                    uart.write_raw(b"\r\n").unwrap();
+                                }
                             }
-                            uart.write_raw(console.pop_current_line().as_bytes()).unwrap();
+                            let curr = console.pop_current_line();
+                            uart.write_raw(curr.as_bytes()).unwrap();
+                            current_line.push_str(&curr);
                             if count < CHUNK_SIZE {
                                 break;
                             }
