@@ -1,12 +1,28 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
+
+use embedded_alloc::LlffHeap as Heap;
 use panic_probe as _;
 use defmt_rtt as _;
 
+mod console;
+
+#[global_allocator]
+static HEAP: Heap = Heap::empty();
+
+unsafe fn init_heap() {
+    use core::mem::MaybeUninit;
+    use core::ptr::addr_of_mut;
+    const HEAP_SIZE: usize = 1024 * 16;
+    static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
+    unsafe { HEAP.init(addr_of_mut!(HEAP_MEM) as usize, HEAP_SIZE) }
+}
+
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
-    use defmt::{debug, info};
     use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock, Timer};
     use rp_pico::hal::clocks::init_clocks_and_plls;
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
@@ -15,6 +31,8 @@ mod app {
     use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
     use embedded_hal::delay::DelayNs;
+    use crate::console::Console;
+    use crate::init_heap;
 
     type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>)>;
 
@@ -29,6 +47,8 @@ mod app {
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
+        unsafe { init_heap() };
+
         let mut pac = cx.device;
         let mut watchdog = Watchdog::new(pac.WATCHDOG);
         let clocks = init_clocks_and_plls(
@@ -68,15 +88,26 @@ mod app {
 
     #[idle(shared = [uart, timer])]
     fn idle(mut cx: idle::Context) -> ! {
+        let mut console = Console::new();
         loop {
             cx.shared.uart.lock(|uart| {
-                let mut buf = [0u8; 64];
-                match uart.read_raw(&mut buf) {
-                    Ok(count) => {
-                        uart.write_raw(&buf[..count]).unwrap();
-                        info!("read: {}", core::str::from_utf8(&buf[..count]).unwrap());
-                    },
-                    Err(_) => {},
+                const CHUNK_SIZE : usize = 64;
+                let mut buf = [0u8; CHUNK_SIZE];
+                loop {
+                    match uart.read_raw(&mut buf) {
+                        Ok(count) => {
+                            console.push(&buf[..count]);
+                            while let Some(line) = console.pop_line() {
+                                uart.write_raw(line.as_bytes()).unwrap();
+                                uart.write_raw(b"\r\n").unwrap();
+                            }
+                            uart.write_raw(console.pop_current_line().as_bytes()).unwrap();
+                            if count < CHUNK_SIZE {
+                                break;
+                            }
+                        },
+                        Err(_) => break,
+                    }
                 }
             });
             cx.shared.timer.lock(|timer| {

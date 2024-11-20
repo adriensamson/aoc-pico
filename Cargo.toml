@@ -11,3 +11,4 @@ defmt-rtt = "0.4.1"
 panic-probe = { version = "0.3.2", features = ["print-defmt"] }
 embedded-hal = "1.0.0"
 embedded-io-async = "0.6.1"
+embedded-alloc = "0.6.0"
