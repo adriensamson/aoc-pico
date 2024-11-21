@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use cortex_m_rt::heap_start;
 use embedded_alloc::LlffHeap as Heap;
 use panic_probe as _;
 use defmt_rtt as _;
@@ -14,11 +15,8 @@ mod aoc;
 static HEAP: Heap = Heap::empty();
 
 unsafe fn init_heap() {
-    use core::mem::MaybeUninit;
-    use core::ptr::addr_of_mut;
     const HEAP_SIZE: usize = 1024 * 16;
-    static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
-    unsafe { HEAP.init(addr_of_mut!(HEAP_MEM) as usize, HEAP_SIZE) }
+    unsafe { HEAP.init(heap_start() as usize, HEAP_SIZE) }
 }
 
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
