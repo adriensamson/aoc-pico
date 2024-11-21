@@ -25,24 +25,25 @@ mod app {
     use rp_pico::hal::clocks::init_clocks_and_plls;
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
     use rp_pico::hal::gpio::{FunctionUart, PullDown};
-    use rp_pico::hal::uart::{UartPeripheral, UartConfig, Enabled};
+    use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader, Writer};
     use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
-    use embedded_hal::delay::DelayNs;
     use crate::aoc::AocRunner;
     use crate::console::Console;
     use crate::init_heap;
 
-    type Uart = UartPeripheral<Enabled, UART0, (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>)>;
+    type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
 
     #[shared]
     struct Shared {
-        uart: Uart,
+        uart_tx: Writer<UART0, UartPinout>,
         timer: Timer,
     }
 
     #[local]
-    struct Local {}
+    struct Local {
+        uart_rx: Reader<UART0, UartPinout>,
+    }
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
@@ -70,61 +71,60 @@ mod app {
             &mut pac.RESETS,
         );
 
-        let uart = UartPeripheral::new(
+        let (uart_rx, uart_tx) = UartPeripheral::new(
             pac.UART0,
             (pins.gpio0.into_function(), pins.gpio1.into_function()),
             &mut pac.RESETS,
         ).enable(
             UartConfig::default(),
             clocks.peripheral_clock.freq(),
-        ).unwrap();
+        ).unwrap().split();
 
         (Shared {
-            uart,
+            uart_tx,
             timer,
-        }, Local {})
+        }, Local {
+            uart_rx,
+        })
     }
 
-    #[idle(shared = [uart, timer])]
+    #[idle(local = [uart_rx], shared = [uart_tx, timer])]
     fn idle(mut cx: idle::Context) -> ! {
+        let uart_rx = cx.local.uart_rx;
+
         let mut console = Console::new();
         let mut aoc_runner = AocRunner::new();
         let mut current_line = String::new();
+        const CHUNK_SIZE : usize = 64;
+        let mut buf = [0u8; CHUNK_SIZE];
+
         loop {
-            cx.shared.uart.lock(|uart| {
-                const CHUNK_SIZE : usize = 64;
-                let mut buf = [0u8; CHUNK_SIZE];
-                loop {
-                    match uart.read_raw(&mut buf) {
-                        Ok(count) => {
-                            console.push(&buf[..count]);
-                            while let Some(mut line) = console.pop_line() {
-                                uart.write_raw(line.as_bytes()).unwrap();
-                                uart.write_raw(b"\r\n").unwrap();
-                                if !current_line.is_empty() {
-                                    current_line.push_str(&line);
-                                    core::mem::swap(&mut current_line, &mut line);
-                                    current_line.clear();
-                                }
-                                for result in aoc_runner.push_line(line) {
-                                    uart.write_raw(result.as_bytes()).unwrap();
-                                    uart.write_raw(b"\r\n").unwrap();
-                                }
-                            }
-                            let curr = console.pop_current_line();
-                            uart.write_raw(curr.as_bytes()).unwrap();
-                            current_line.push_str(&curr);
-                            if count < CHUNK_SIZE {
-                                break;
-                            }
-                        },
-                        Err(_) => break,
+            match uart_rx.read_raw(&mut buf) {
+                Ok(count) => {
+                    console.push(&buf[..count]);
+                    while let Some(mut line) = console.pop_line() {
+                        cx.shared.uart_tx.lock(|tx| {
+                            tx.write_raw(line.as_bytes()).unwrap();
+                            tx.write_raw(b"\r\n").unwrap();
+                        });
+                        if !current_line.is_empty() {
+                            current_line.push_str(&line);
+                            core::mem::swap(&mut current_line, &mut line);
+                            current_line.clear();
+                        }
+                        for result in aoc_runner.push_line(line) {
+                            cx.shared.uart_tx.lock(|tx| {
+                                tx.write_raw(result.as_bytes()).unwrap();
+                                tx.write_raw(b"\r\n").unwrap();
+                            });
+                        }
                     }
-                }
-            });
-            cx.shared.timer.lock(|timer| {
-                timer.delay_ms(10);
-            });
+                    let curr = console.pop_current_line();
+                    cx.shared.uart_tx.lock(|tx| tx.write_raw(curr.as_bytes()).unwrap());
+                    current_line.push_str(&curr);
+                },
+                Err(_) => {},
+            }
         }
     }
 }
