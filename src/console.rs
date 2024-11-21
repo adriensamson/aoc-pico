@@ -1,14 +1,15 @@
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
+use rp_pico::hal::uart::{UartDevice, ValidUartPinout, Writer};
 
-pub(crate) struct Console {
+pub(crate) struct InputParser {
     incomplete_seq: Vec<u8>,
     current_line: String,
     lines: VecDeque<String>,
 }
 
-impl Console {
+impl InputParser {
     pub fn new() -> Self {
         Self {
             incomplete_seq: Vec::new(),
@@ -92,7 +93,7 @@ impl Console {
     }
 }
 
-impl Default for Console {
+impl Default for InputParser {
     fn default() -> Self {
         Self::new()
     }
@@ -103,4 +104,72 @@ enum State {
     Normal,
     InUtf8,
     InEscape,
+}
+
+pub struct Console<Output, Runner> {
+    parser: InputParser,
+    current_line: String,
+    output: Output,
+    runner: Runner,
+}
+
+pub trait ConsoleRunner {
+    type Output: Iterator<Item = String>;
+
+    fn push_line(&mut self, line: String) -> Self::Output;
+}
+
+pub trait ConsoleOutput {
+    fn output(&mut self, line: &[u8]);
+}
+
+impl<Output: ConsoleOutput, Runner: ConsoleRunner> Console<Output, Runner> {
+    pub fn new(output: Output, runner: Runner) -> Self {
+        Self {
+            parser: InputParser::new(),
+            current_line: String::new(),
+            output,
+            runner,
+        }
+    }
+
+    pub fn push(&mut self, buf: &[u8]) {
+        self.parser.push(buf);
+        while let Some(mut line) = self.parser.pop_line() {
+            self.output.output(line.as_bytes());
+            self.output.output(b"\r\n");
+
+            if !self.current_line.is_empty() {
+                self.current_line.push_str(&line);
+                core::mem::swap(&mut self.current_line, &mut line);
+                self.current_line.clear();
+            }
+            for result in self.runner.push_line(line) {
+                self.output.output(result.as_bytes());
+                self.output.output(b"\r\n");
+            }
+        }
+        let curr = self.parser.pop_current_line();
+        self.output.output(curr.as_bytes());
+        self.current_line.push_str(&curr);
+    }
+
+    pub fn writeln(&mut self, line: &str) {
+        self.output.output(line.as_bytes());
+        self.output.output(b"\r\n");
+    }
+}
+
+pub struct ConsoleUartWriter<U: UartDevice, P: ValidUartPinout<U>>(pub Writer<U, P>);
+
+impl<U: UartDevice, P: ValidUartPinout<U>> ConsoleOutput for ConsoleUartWriter<U, P> {
+    fn output(&mut self, mut line: &[u8]) {
+        loop {
+            match self.0.write_raw(line) {
+                Ok(rem) if rem.is_empty() => break,
+                Ok(rem) => line = rem,
+                Err(_) => {},
+            }
+        }
+    }
 }

@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use crate::console::ConsoleRunner;
 
 pub struct AocRunner {
     day: u8,
@@ -17,8 +18,12 @@ impl AocRunner {
             input: Vec::new(),
         }
     }
+}
 
-    pub fn push_line(&mut self, line: String) -> Box<dyn Iterator<Item = String>> {
+impl ConsoleRunner for AocRunner {
+    type Output = Box<dyn Iterator<Item = String>>;
+
+    fn push_line(&mut self, line: String) -> Self::Output {
         if self.reading_input {
             if line.trim() == "end" {
                 self.reading_input = false;

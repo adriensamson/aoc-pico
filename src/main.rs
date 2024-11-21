@@ -21,22 +21,22 @@ unsafe fn init_heap() {
 
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
-    use alloc::string::String;use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock, Timer};
+    use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock, Timer};
     use rp_pico::hal::clocks::init_clocks_and_plls;
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
     use rp_pico::hal::gpio::{FunctionUart, PullDown};
-    use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader, Writer};
+    use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader};
     use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
     use crate::aoc::AocRunner;
-    use crate::console::Console;
+    use crate::console::{Console, ConsoleUartWriter};
     use crate::init_heap;
 
     type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
 
     #[shared]
     struct Shared {
-        uart_tx: Writer<UART0, UartPinout>,
+        console: Console<ConsoleUartWriter<UART0, UartPinout>, AocRunner>,
         timer: Timer,
     }
 
@@ -80,48 +80,28 @@ mod app {
             clocks.peripheral_clock.freq(),
         ).unwrap().split();
 
+        let aoc_runner = AocRunner::new();
+        let console = Console::new(ConsoleUartWriter(uart_tx), aoc_runner);
+
         (Shared {
-            uart_tx,
+            console,
             timer,
         }, Local {
             uart_rx,
         })
     }
 
-    #[idle(local = [uart_rx], shared = [uart_tx, timer])]
+    #[idle(local = [uart_rx], shared = [console])]
     fn idle(mut cx: idle::Context) -> ! {
         let uart_rx = cx.local.uart_rx;
 
-        let mut console = Console::new();
-        let mut aoc_runner = AocRunner::new();
-        let mut current_line = String::new();
         const CHUNK_SIZE : usize = 64;
         let mut buf = [0u8; CHUNK_SIZE];
 
         loop {
             match uart_rx.read_raw(&mut buf) {
                 Ok(count) => {
-                    console.push(&buf[..count]);
-                    while let Some(mut line) = console.pop_line() {
-                        cx.shared.uart_tx.lock(|tx| {
-                            tx.write_raw(line.as_bytes()).unwrap();
-                            tx.write_raw(b"\r\n").unwrap();
-                        });
-                        if !current_line.is_empty() {
-                            current_line.push_str(&line);
-                            core::mem::swap(&mut current_line, &mut line);
-                            current_line.clear();
-                        }
-                        for result in aoc_runner.push_line(line) {
-                            cx.shared.uart_tx.lock(|tx| {
-                                tx.write_raw(result.as_bytes()).unwrap();
-                                tx.write_raw(b"\r\n").unwrap();
-                            });
-                        }
-                    }
-                    let curr = console.pop_current_line();
-                    cx.shared.uart_tx.lock(|tx| tx.write_raw(curr.as_bytes()).unwrap());
-                    current_line.push_str(&curr);
+                    cx.shared.console.lock(|c| c.push(&buf[..count]));
                 },
                 Err(_) => {},
             }
