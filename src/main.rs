@@ -28,6 +28,7 @@ mod app {
     use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader};
     use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
+    use rtic::export::wfi;
     use crate::aoc::AocRunner;
     use crate::console::{Console, ConsoleUartWriter};
     use crate::init_heap;
@@ -43,6 +44,13 @@ mod app {
     #[local]
     struct Local {
         uart_rx: Reader<UART0, UartPinout>,
+    }
+
+    #[idle]
+    fn idle(_: idle::Context) -> ! {
+        loop {
+            wfi()
+        }
     }
 
     #[init]
@@ -71,7 +79,7 @@ mod app {
             &mut pac.RESETS,
         );
 
-        let (uart_rx, uart_tx) = UartPeripheral::new(
+        let (mut uart_rx, uart_tx) = UartPeripheral::new(
             pac.UART0,
             (pins.gpio0.into_function(), pins.gpio1.into_function()),
             &mut pac.RESETS,
@@ -82,6 +90,7 @@ mod app {
 
         let aoc_runner = AocRunner::new();
         let console = Console::new(ConsoleUartWriter(uart_tx), aoc_runner);
+        uart_rx.enable_rx_interrupt();
 
         (Shared {
             console,
@@ -91,8 +100,8 @@ mod app {
         })
     }
 
-    #[idle(local = [uart_rx], shared = [console])]
-    fn idle(mut cx: idle::Context) -> ! {
+    #[task(binds = UART0_IRQ, local = [uart_rx], shared = [console])]
+    fn read_uart(mut cx: read_uart::Context) {
         let uart_rx = cx.local.uart_rx;
 
         const CHUNK_SIZE : usize = 64;
