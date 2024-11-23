@@ -5,7 +5,6 @@ use defmt::debug;
 use rp_pico::hal::Sio;
 use rp_pico::hal::sio::SioFifo;
 use rp_pico::pac::Peripherals;
-use crate::aoc::AocRunner;
 use crate::console::ConsoleRunner;
 use crate::memory::install_core1_stack_guard;
 
@@ -56,17 +55,17 @@ impl<'a> Iterator for MulticoreReceiver<'a> {
     }
 }
 
-pub(crate) struct MulticoreRunner<R: ConsoleRunner> {
+struct MulticoreRunner<R: ConsoleRunner> {
     fifo: SioFifo,
     inner: R,
 }
 
 impl <R: ConsoleRunner> MulticoreRunner<R> {
-    pub(crate) fn new(fifo: SioFifo, inner: R) -> Self {
+    fn new(fifo: SioFifo, inner: R) -> Self {
         Self { fifo, inner }
     }
 
-    pub(crate) fn run(&mut self) -> ! {
+    fn run(&mut self) -> ! {
         loop {
             let addr = self.fifo.read_blocking() as *mut String;
             debug!("core1 read {:X}", addr);
@@ -83,27 +82,34 @@ impl <R: ConsoleRunner> MulticoreRunner<R> {
     }
 }
 
-static mut RUNNER : Option<AocRunner> = None;
-pub fn create_multicore_runner(mut fifo: SioFifo, runner: AocRunner) -> MulticoreProxy {
-    unsafe { RUNNER = Some(runner); }
-    extern "C" fn core1_entry() {
-        debug!("core1: entry");
-        install_core1_stack_guard();
-        let runner = unsafe { RUNNER.take() }.unwrap();
+pub fn create_multicore_runner(mut fifo: SioFifo, runner: impl ConsoleRunner + 'static) -> MulticoreProxy {
+    let f = move || {
         let fifo = unsafe { Sio::new(Peripherals::steal().SIO).fifo };
         let mut multicore_runner = MulticoreRunner::new(fifo, runner);
         debug!("core1: run!");
         multicore_runner.run()
-    }
-    extern "C" {
-        static core1_stack_start: u32;
-    }
-    start_core1(&mut fifo, addr_of!(core1_stack_start) as *mut u32, core1_entry as *const _);
-
+    };
+    start_core1_with_fn(&mut fifo, f);
     MulticoreProxy { fifo }
 }
 
-pub fn start_core1(fifo: &mut SioFifo, stack_ptr: *mut u32, entry: *const fn()) {
+static mut CORE1_FN : Option<Box<dyn FnOnce()>> = None;
+extern "C" fn core1_entry() {
+    debug!("core1: entry");
+    install_core1_stack_guard();
+    let f = unsafe { CORE1_FN.take().unwrap() };
+    f()
+}
+extern "C" {
+    static core1_stack_start: u32;
+}
+
+fn start_core1_with_fn(fifo: &mut SioFifo, f: impl FnOnce() + 'static) {
+    unsafe { CORE1_FN = Some(Box::new(f)); }
+    start_core1(fifo, addr_of!(core1_stack_start) as *mut u32, core1_entry as *const _);
+}
+
+fn start_core1(fifo: &mut SioFifo, stack_ptr: *mut u32, entry: *const fn()) {
     // Reset core1
     let psm = unsafe { Peripherals::steal().PSM };
     psm.frce_off().modify(|_, w| w.proc1().set_bit());
@@ -139,6 +145,7 @@ pub fn start_core1(fifo: &mut SioFifo, stack_ptr: *mut u32, entry: *const fn()) 
             seq = 0;
             fails += 1;
             if fails > 16 {
+                panic!("Cannot start core1");
             }
         }
         if seq >= cmd_seq.len() {
