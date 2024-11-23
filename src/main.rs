@@ -100,7 +100,7 @@ mod app {
     fn read_uart(mut cx: read_uart::Context) {
         let uart_rx = cx.local.uart_rx;
 
-        const CHUNK_SIZE : usize = 64;
+        const CHUNK_SIZE : usize = 32;
         let mut buf = [0u8; CHUNK_SIZE];
 
         loop {

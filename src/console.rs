@@ -1,105 +1,145 @@
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
+use defmt::{debug, Formatter};
 use rp_pico::hal::uart::{UartDevice, ValidUartPinout, Writer};
 
+#[allow(dead_code)]
+pub enum Input {
+    Line(String),
+    IncompleteLine(String),
+    Control(char),
+    EscapeSequence(EscapeSequence),
+    InvalidByteSequence(Vec<u8>),
+}
+
+#[allow(dead_code)]
+pub enum EscapeSequence {
+    Unknown(Vec<u8>),
+}
+
+impl From<Vec<u8>> for EscapeSequence {
+    fn from(value: Vec<u8>) -> Self {
+        debug!("escape sequence: {=[u8]:X}", value);
+        EscapeSequence::Unknown(value)
+    }
+}
+
+#[derive(Default)]
 pub(crate) struct InputParser {
-    incomplete_seq: Vec<u8>,
-    current_line: String,
-    lines: VecDeque<String>,
+    buffer: VecDeque<u8>,
 }
 
 impl InputParser {
     pub fn new() -> Self {
         Self {
-            incomplete_seq: Vec::new(),
-            current_line: String::new(),
-            lines: VecDeque::new(),
+            buffer: VecDeque::new(),
         }
     }
 
     pub fn push(&mut self, buf: &[u8]) {
+        self.buffer.extend(buf);
+    }
+}
+
+impl Iterator for InputParser {
+    type Item = Input;
+
+    fn next(&mut self) -> Option<Self::Item> {
         let mut state = State::Normal;
-        let mut incomplete_seq = Vec::with_capacity(4);
-        for &b in self.incomplete_seq.iter().chain(buf) {
+        let mut current_line = String::new();
+        loop {
+            let b = match self.buffer.pop_front() {
+                Some(b) => b,
+                None => {
+                    debug!("no more bytes");
+                    self.buffer.extend(state.as_bytes());
+                    return if current_line.is_empty() { None } else { Some(Input::IncompleteLine(current_line)) }
+                },
+            };
+            debug!("state={:?} b={:X}", state, b);
             match state {
                 State::Normal => {
                     match b {
                         b'\n' | b'\r' => {
-                            self.lines.push_back(core::mem::take(&mut self.current_line))
+                            return Some(Input::Line(current_line));
                         },
                         b'\x1b' => {
-                            state = State::InEscape
+                            state = State::InEscape(Vec::from([b]))
                         },
-                        b'\x00'..=b'\x1f' => {
-                            // ignore
+                        b'\x00'..=b'\x1f' | b'\x7f' => {
+                            debug!("control: {:X}", b);
+                            return Some(Input::Control(b as char))
                         },
                         b'\x20'..=b'\x7e' => {
-                            self.current_line.push(b as char);
-                        },
-                        b'\x7f' => {
-                            // ignore
+                            current_line.push(b as char);
                         },
                         b'\x80'..=b'\xff' => {
-                            state = State::InUtf8;
-                            incomplete_seq.push(b);
+                            state = State::InUtf8(Vec::from([b]));
                         }
                     }
                 },
-                State::InUtf8 => {
+                State::InUtf8(mut v) => {
+                    v.push(b);
                     if !matches!(b, b'\x80'..=b'\xff') {
                         // invalid sequence
-                        incomplete_seq.clear();
+                        return Some(Input::InvalidByteSequence(v));
+                    } else if let Ok(s) = core::str::from_utf8(&v) {
+                        current_line.push_str(s);
                         state = State::Normal;
                     } else {
-                        incomplete_seq.push(b);
-                        if let Ok(s) = core::str::from_utf8(&incomplete_seq) {
-                            self.current_line.push_str(s);
-                            incomplete_seq.clear();
-                            state = State::Normal;
-                        }
+                        state = State::InUtf8(v);
                     }
                 },
-                State::InEscape => {
-                    if incomplete_seq.is_empty() {
-                        if b != b'[' {
-                            // ignore and treat as 1byte seq
-                            state = State::Normal
+                State::InEscape(mut v) => {
+                    v.push(b);
+                    if v.len() == 2 {
+                        if b == b'[' {
+                            debug!("CSI");
+                            state = State::InEscape(v);
                         } else {
-                            incomplete_seq.push(b);
+                            debug!("1byte escape");
+                            return Some(Input::EscapeSequence(EscapeSequence::from(v)));
                         }
                     } else if matches!(b, b'\x40'..=b'\x7e') {
-                        // end of sequence, ignore for now
-                        incomplete_seq.clear();
-                        state = State::Normal
+                        debug!("end of sequence");
+                        // end of sequence
+                        return Some(Input::EscapeSequence(EscapeSequence::from(v)));
                     } else {
-                        incomplete_seq.push(b);
+                        debug!("continue");
+                        state = State::InEscape(v);
                     }
                 }
             }
         }
-    }
-
-    pub fn pop_line(&mut self) -> Option<String> {
-        self.lines.pop_front()
-    }
-
-    pub fn pop_current_line(&mut self) -> String {
-        core::mem::take(&mut self.current_line)
-    }
-}
-
-impl Default for InputParser {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 #[derive(Eq, PartialEq)]
 enum State {
     Normal,
-    InUtf8,
-    InEscape,
+    InUtf8(Vec<u8>),
+    InEscape(Vec<u8>),
+}
+
+impl State {
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            State::Normal => &[],
+            State::InUtf8(v) => v,
+            State::InEscape(v) => v,
+        }
+    }
+}
+
+impl defmt::Format for State {
+    fn format(&self, fmt: Formatter) {
+        match self {
+            State::Normal =>  defmt::write!(fmt, "normal"),
+            State::InUtf8(v) =>  defmt::write!(fmt, "inutf8: {=[u8]:X}", v),
+            State::InEscape(v) =>  defmt::write!(fmt, "inescape: {=[u8]:X}", v),
+        }
+    }
 }
 
 pub struct Console<Output, Runner> {
@@ -131,23 +171,29 @@ impl<Output: ConsoleOutput, Runner: ConsoleRunner> Console<Output, Runner> {
 
     pub fn push(&mut self, buf: &[u8]) {
         self.parser.push(buf);
-        while let Some(mut line) = self.parser.pop_line() {
-            self.output.output(line.as_bytes());
-            self.output.output(b"\r\n");
+        while let Some(input) = self.parser.next() {
+            match input {
+                Input::Line(mut line) => {
+                    if !self.current_line.is_empty() {
+                        self.current_line.push_str(&line);
+                        core::mem::swap(&mut self.current_line, &mut line);
+                        self.current_line.clear();
+                    }
+                    self.output.output(line.as_bytes());
+                    self.output.output(b"\r\n");
 
-            if !self.current_line.is_empty() {
-                self.current_line.push_str(&line);
-                core::mem::swap(&mut self.current_line, &mut line);
-                self.current_line.clear();
-            }
-            for result in self.runner.push_line(line) {
-                self.output.output(result.as_bytes());
-                self.output.output(b"\r\n");
+                    for result in self.runner.push_line(line) {
+                        self.output.output(result.as_bytes());
+                        self.output.output(b"\r\n");
+                    }
+                }
+                Input::IncompleteLine(curr) => {
+                    self.output.output(curr.as_bytes());
+                    self.current_line.push_str(&curr);
+                }
+                _ => {}
             }
         }
-        let curr = self.parser.pop_current_line();
-        self.output.output(curr.as_bytes());
-        self.current_line.push_str(&curr);
     }
 
     pub fn writeln(&mut self, line: &str) {
