@@ -68,16 +68,12 @@ impl InputParser {
                         } else {
                             incomplete_seq.push(b);
                         }
-                    } else if incomplete_seq.is_empty() {
-                        incomplete_seq.push(b);
+                    } else if matches!(b, b'\x40'..=b'\x7e') {
+                        // end of sequence, ignore for now
+                        incomplete_seq.clear();
+                        state = State::Normal
                     } else {
-                        if matches!(b, b'\x40'..=b'\x7e') {
-                            // end of sequence, ignore for now
-                            incomplete_seq.clear();
-                            state = State::Normal
-                        } else {
-                            incomplete_seq.push(b);
-                        }
+                        incomplete_seq.push(b);
                     }
                 }
             }
@@ -166,7 +162,7 @@ impl<U: UartDevice, P: ValidUartPinout<U>> ConsoleOutput for ConsoleUartWriter<U
     fn output(&mut self, mut line: &[u8]) {
         loop {
             match self.0.write_raw(line) {
-                Ok(rem) if rem.is_empty() => break,
+                Ok([]) => break,
                 Ok(rem) => line = rem,
                 Err(_) => {},
             }

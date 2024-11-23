@@ -112,11 +112,8 @@ mod app {
         let mut buf = [0u8; CHUNK_SIZE];
 
         loop {
-            match uart_rx.read_raw(&mut buf) {
-                Ok(count) => {
-                    cx.shared.console.lock(|c| c.push(&buf[..count]));
-                },
-                Err(_) => {},
+            if let Ok(count) = uart_rx.read_raw(&mut buf) {
+                cx.shared.console.lock(|c| c.push(&buf[..count]));
             }
         }
     }
