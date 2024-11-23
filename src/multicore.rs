@@ -7,7 +7,7 @@ use rp_pico::hal::sio::SioFifo;
 use rp_pico::pac::Peripherals;
 use crate::aoc::AocRunner;
 use crate::console::ConsoleRunner;
-use crate::stack_guard::install_core1_stack_guard;
+use crate::memory::install_core1_stack_guard;
 
 pub struct MulticoreProxy {
     pub fifo: SioFifo,

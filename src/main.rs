@@ -3,23 +3,13 @@
 
 extern crate alloc;
 
-use cortex_m_rt::heap_start;
-use embedded_alloc::LlffHeap as Heap;
 use panic_probe as _;
 use defmt_rtt as _;
 
 mod console;
 mod aoc;
 mod multicore;
-mod stack_guard;
-
-#[global_allocator]
-static HEAP: Heap = Heap::empty();
-
-unsafe fn init_heap() {
-    const HEAP_SIZE: usize = 1024 * 16;
-    unsafe { HEAP.init(heap_start() as usize, HEAP_SIZE) }
-}
+mod memory;
 
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
@@ -34,9 +24,8 @@ mod app {
     use rtic::export::wfi;
     use crate::aoc::AocRunner;
     use crate::console::{Console, ConsoleUartWriter};
-    use crate::init_heap;
     use crate::multicore::{create_multicore_runner, MulticoreProxy};
-    use crate::stack_guard::install_core0_stack_guard;
+    use crate::memory::{init_heap, install_core0_stack_guard};
 
     type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
 
