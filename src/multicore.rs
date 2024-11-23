@@ -7,6 +7,7 @@ use rp_pico::hal::sio::SioFifo;
 use rp_pico::pac::Peripherals;
 use crate::aoc::AocRunner;
 use crate::console::ConsoleRunner;
+use crate::stack_guard::install_core1_stack_guard;
 
 pub struct MulticoreProxy {
     pub fifo: SioFifo,
@@ -87,6 +88,7 @@ pub fn create_multicore_runner(mut fifo: SioFifo, runner: AocRunner) -> Multicor
     unsafe { RUNNER = Some(runner); }
     extern "C" fn core1_entry() {
         debug!("core1: entry");
+        install_core1_stack_guard();
         let runner = unsafe { RUNNER.take() }.unwrap();
         let fifo = unsafe { Sio::new(Peripherals::steal().SIO).fifo };
         let mut multicore_runner = MulticoreRunner::new(fifo, runner);

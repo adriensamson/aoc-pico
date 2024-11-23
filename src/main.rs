@@ -11,6 +11,7 @@ use defmt_rtt as _;
 mod console;
 mod aoc;
 mod multicore;
+mod stack_guard;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -35,6 +36,7 @@ mod app {
     use crate::console::{Console, ConsoleUartWriter};
     use crate::init_heap;
     use crate::multicore::{create_multicore_runner, MulticoreProxy};
+    use crate::stack_guard::install_core0_stack_guard;
 
     type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
 
@@ -58,6 +60,7 @@ mod app {
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
         unsafe { init_heap() };
+        install_core0_stack_guard();
 
         let mut pac = cx.device;
         let mut watchdog = Watchdog::new(pac.WATCHDOG);
