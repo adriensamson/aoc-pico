@@ -10,6 +10,7 @@ use defmt_rtt as _;
 
 mod console;
 mod aoc;
+mod multicore;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -21,7 +22,8 @@ unsafe fn init_heap() {
 
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
-    use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock, Timer};
+    use defmt::debug;
+    use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock};
     use rp_pico::hal::clocks::init_clocks_and_plls;
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
     use rp_pico::hal::gpio::{FunctionUart, PullDown};
@@ -32,13 +34,13 @@ mod app {
     use crate::aoc::AocRunner;
     use crate::console::{Console, ConsoleUartWriter};
     use crate::init_heap;
+    use crate::multicore::{create_multicore_runner, MulticoreProxy};
 
     type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
 
     #[shared]
     struct Shared {
-        console: Console<ConsoleUartWriter<UART0, UartPinout>, AocRunner>,
-        timer: Timer,
+        console: Console<ConsoleUartWriter<UART0, UartPinout>, MulticoreProxy>,
     }
 
     #[local]
@@ -68,7 +70,6 @@ mod app {
             &mut pac.RESETS,
             &mut watchdog,
         ).unwrap();
-        let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
         let sio = Sio::new(pac.SIO);
 
@@ -89,12 +90,15 @@ mod app {
         ).unwrap().split();
 
         let aoc_runner = AocRunner::new();
-        let console = Console::new(ConsoleUartWriter(uart_tx), aoc_runner);
+        let fifo = sio.fifo;
+        let multicore_runner = create_multicore_runner(fifo, aoc_runner);
+        debug!("multicore started");
+
+        let console = Console::new(ConsoleUartWriter(uart_tx), multicore_runner);
         uart_rx.enable_rx_interrupt();
 
         (Shared {
             console,
-            timer,
         }, Local {
             uart_rx,
         })

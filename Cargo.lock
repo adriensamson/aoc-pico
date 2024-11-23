@@ -6,6 +6,7 @@ version = 3
 name = "aoc-pico"
 version = "0.1.0"
 dependencies = [
+ "cortex-m",
  "cortex-m-rt",
  "defmt",
  "defmt-rtt",

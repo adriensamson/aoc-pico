@@ -114,9 +114,9 @@ pub struct Console<Output, Runner> {
 }
 
 pub trait ConsoleRunner {
-    type Output: Iterator<Item = String>;
+    type Output<'a>: Iterator<Item = String> where Self: 'a;
 
-    fn push_line(&mut self, line: String) -> Self::Output;
+    fn push_line(&mut self, line: String) -> Self::Output<'_>;
 }
 
 pub trait ConsoleOutput {

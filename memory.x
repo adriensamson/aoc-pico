@@ -10,6 +10,8 @@ MEMORY {
 _stack_start = ORIGIN(SRAM5) + LENGTH(SRAM5);
 _stack_end = ORIGIN(SRAM5);
 
+core1_stack_start = ORIGIN(SRAM4) + LENGTH(SRAM4);
+
 EXTERN(BOOT2_FIRMWARE)
 
 SECTIONS {

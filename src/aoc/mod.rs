@@ -21,9 +21,9 @@ impl AocRunner {
 }
 
 impl ConsoleRunner for AocRunner {
-    type Output = Box<dyn Iterator<Item = String>>;
+    type Output<'a> = Box<dyn Iterator<Item = String>>;
 
-    fn push_line(&mut self, line: String) -> Self::Output {
+    fn push_line(&mut self, line: String) -> Self::Output<'static> {
         if self.reading_input {
             if line.trim() == "end" {
                 self.reading_input = false;
