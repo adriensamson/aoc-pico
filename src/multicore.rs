@@ -5,7 +5,7 @@ use defmt::debug;
 use rp_pico::hal::Sio;
 use rp_pico::hal::sio::SioFifo;
 use rp_pico::pac::Peripherals;
-use crate::console::ConsoleRunner;
+use crate::shell::ConsoleRunner;
 use crate::memory::install_core1_stack_guard;
 
 pub struct MulticoreProxy {
