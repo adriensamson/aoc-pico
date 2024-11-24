@@ -16,16 +16,16 @@ impl Command for AocRunner {
     type Output = Box<dyn Iterator<Item = String> + Send>;
 
     fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output {
-        let day = args[0].as_str().parse::<usize>();
+        let day = args.get(0).map(String::as_str).unwrap_or("0").parse::<usize>();
         if day.is_err() {
-            return Box::new(Some(String::from(">bad day")).into_iter());
+            return Box::new(Some(String::from("bad day")).into_iter());
         }
         let day = day.unwrap();
         if day > NB_DAYS {
-            return Box::new(Some(String::from(">bad day")).into_iter());
+            return Box::new(Some(String::from("bad day")).into_iter());
         }
         Box::new(
-            Some(String::from(">running...")).into_iter().chain(DAYS[day](input)),
+            Some(String::from("running...")).into_iter().chain(DAYS[day](input)),
         )
     }
 }

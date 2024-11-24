@@ -269,7 +269,7 @@ impl Iterator for Console {
                         current_line.push_str(&s);
                         Some(s.into_bytes())
                     },
-                    Input::Control('\x03') => {
+                    Input::Control('\x04') => {
                         input_lines.push(core::mem::take(current_line));
                         self.state = ConsoleState::RunCommand {cmd_line: core::mem::take(cmd_line), input: core::mem::take(input_lines)};
                         Some(self.eol().as_bytes().to_vec())
@@ -327,7 +327,7 @@ fn test_input_parser() {
     parser.push(b"pppp\r");
     assert_eq!(parser.next(), Some(Input::Line("pppp".into())));
     assert_eq!(parser.next(), None);
-    parser.push(b"\x03");
+    parser.push(b"\x04");
     assert_eq!(parser.next(), Some(Input::Control('\x03')));
     assert_eq!(parser.next(), None);
 }
@@ -349,7 +349,7 @@ fn test_console() {
     console.push(b"plop\r");
     assert_eq!(console.next(), Some(b"plop\r\n< ".into()));
     assert_eq!(console.next(), None);
-    console.push(b"\x03");
+    console.push(b"\x04");
     assert_eq!(console.next(), Some(b"\r\n> ".into()));
     assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
     assert_eq!(console.next(), None);
