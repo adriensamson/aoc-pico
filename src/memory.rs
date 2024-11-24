@@ -1,4 +1,4 @@
-use core::ptr::addr_of_mut;
+use core::ptr::{addr_of, addr_of_mut};
 use cortex_m_rt::heap_start;
 use defmt::debug;
 use embedded_alloc::LlffHeap as Heap;
@@ -20,7 +20,7 @@ pub(crate) unsafe fn init_heap() {
 }
 
 #[inline(always)]
-fn install_stack_guard(stack_bottom: *mut usize) {
+fn install_stack_guard(stack_bottom: usize) {
     let core = unsafe { rp_pico::pac::CorePeripherals::steal() };
 
     // Trap if MPU is already configured
@@ -47,9 +47,9 @@ fn install_stack_guard(stack_bottom: *mut usize) {
 }
 
 pub(crate) fn install_core0_stack_guard() {
-    install_stack_guard(addr_of_mut!(_stack_end))
+    install_stack_guard(addr_of_mut!(_stack_end) as usize)
 }
 
 pub(crate) fn install_core1_stack_guard() {
-    install_stack_guard(addr_of_mut!(core1_stack_end))
+    install_stack_guard(addr_of_mut!(core1_stack_end) as usize)
 }
