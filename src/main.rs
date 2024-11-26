@@ -24,7 +24,7 @@ use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
 use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, ConsoleOutput, ConsoleUartWriter};
 //use crate::multicore::{create_multicore_runner, MulticoreProxy};
-use crate::memory::{init_heap, install_core0_stack_guard};
+use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 
 type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
 
@@ -38,6 +38,7 @@ struct Local {
 }
 
 fn idle() -> ! {
+    debug!("stack pointer: {:x}", read_sp());
     loop {
         cortex_m::asm::wfi()
     }
@@ -60,7 +61,7 @@ fn entry() -> ! {
 
 fn init() -> (Shared, Local) {
     unsafe { init_heap() };
-    //install_core0_stack_guard();
+    install_core0_stack_guard();
 
     let mut pac = rp_pico::pac::Peripherals::take().unwrap();
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
@@ -121,10 +122,8 @@ fn UART0_IRQ() {
     let mut buf = [0u8; CHUNK_SIZE];
 
     while let Ok(count) = uart_rx.read_raw(&mut buf) {
-        debug!("push {=[u8]:X}", &buf[..count]);
         console.push(&buf[..count]);
         while let Some(out) = console.next() {
-            debug!("get {=[u8]:X}", out);
             console_writer.output(&out);
         }
     }

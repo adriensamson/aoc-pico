@@ -13,3 +13,26 @@ panic-probe = { version = "0.3.2", features = ["print-defmt"] }
 embedded-hal = "1.0.0"
 embedded-io-async = "0.6.1"
 embedded-alloc = "0.6.0"
+
+# cargo build/run
+[profile.dev]
+codegen-units = 1
+incremental = false
+opt-level = 3
+
+# cargo build/run --release
+[profile.release]
+codegen-units = 1
+debug = 2
+lto = 'fat'
+
+# do not optimize proc-macro crates = faster builds from scratch
+[profile.dev.build-override]
+codegen-units = 8
+debug = false
+debug-assertions = false
+overflow-checks = false
+
+[profile.release.build-override]
+codegen-units = 8
+debug = false

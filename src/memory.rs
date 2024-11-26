@@ -21,6 +21,7 @@ pub(crate) unsafe fn init_heap() {
 
 #[inline(always)]
 fn install_stack_guard(stack_bottom: usize) {
+    debug!("Installing stack guard at {:X}", stack_bottom);
     let core = unsafe { rp_pico::pac::CorePeripherals::steal() };
 
     // Trap if MPU is already configured
@@ -52,4 +53,15 @@ pub(crate) fn install_core0_stack_guard() {
 
 pub(crate) fn install_core1_stack_guard() {
     install_stack_guard(addr_of_mut!(core1_stack_end) as usize)
+}
+
+pub fn read_sp() -> usize {
+    let i: usize;
+    unsafe {
+        core::arch::asm!(
+        "mov {0}, sp",
+        out(reg) i,
+        )
+    }
+    i
 }
