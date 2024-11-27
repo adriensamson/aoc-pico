@@ -16,7 +16,7 @@ impl Command for AocRunner {
     type Output = Box<dyn Iterator<Item = String> + Send>;
 
     fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output {
-        let day = args.get(0).map(String::as_str).unwrap_or("0").parse::<usize>();
+        let day = args.first().map(String::as_str).unwrap_or("0").parse::<usize>();
         if day.is_err() {
             return Box::new(Some(String::from("bad day")).into_iter());
         }

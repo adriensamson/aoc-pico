@@ -123,7 +123,7 @@ fn UART0_IRQ() {
 
     while let Ok(count) = uart_rx.read_raw(&mut buf) {
         console.push(&buf[..count]);
-        while let Some(out) = console.next() {
+        for out in &mut *console {
             console_writer.output(&out);
         }
     }
