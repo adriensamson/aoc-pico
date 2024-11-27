@@ -1,36 +1,39 @@
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::ptr::addr_of;
+use cortex_m::singleton;
 use defmt::debug;
 use rp_pico::hal::Sio;
 use rp_pico::hal::sio::SioFifo;
 use rp_pico::pac::Peripherals;
-use crate::shell::ConsoleRunner;
+use aoc_pico::shell::Command;
 use crate::memory::install_core1_stack_guard;
 
 pub struct MulticoreProxy {
-    pub fifo: SioFifo,
+    pub fifo: &'static mut SioFifo,
 }
 
-impl ConsoleRunner for MulticoreProxy {
-    type Output<'a> = MulticoreReceiver<'a>;
+impl Command for MulticoreProxy {
+    type Output = MulticoreReceiver;
 
-    fn push_line(&mut self, line: String) -> Self::Output<'_> {
-        let boxed = Box::new(line);
+    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output {
+        let boxed = Box::new((args, input));
         let ptr = Box::into_raw(boxed);
         debug!("core0: write {:X}", ptr);
         self.fifo.write_blocking(ptr as u32);
-        MulticoreReceiver::new(&mut self.fifo)
+        let fifo : &'static mut SioFifo = unsafe { core::mem::transmute(&mut self.fifo) };
+        MulticoreReceiver::new(fifo)
     }
 }
 
-pub struct MulticoreReceiver<'a> {
-    fifo: &'a mut SioFifo,
+pub struct MulticoreReceiver {
+    fifo: &'static mut SioFifo,
     finished: bool,
 }
 
-impl<'a> MulticoreReceiver<'a> {
-    fn new(fifo: &'a mut SioFifo) -> Self {
+impl MulticoreReceiver {
+    fn new(fifo: &'static mut SioFifo) -> Self {
         Self {
             fifo,
             finished: false,
@@ -38,7 +41,7 @@ impl<'a> MulticoreReceiver<'a> {
     }
 }
 
-impl<'a> Iterator for MulticoreReceiver<'a> {
+impl Iterator for MulticoreReceiver {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -55,23 +58,24 @@ impl<'a> Iterator for MulticoreReceiver<'a> {
     }
 }
 
-struct MulticoreRunner<R: ConsoleRunner> {
+struct MulticoreRunner<C: Command> {
     fifo: SioFifo,
-    inner: R,
+    inner: C,
 }
 
-impl <R: ConsoleRunner> MulticoreRunner<R> {
-    fn new(fifo: SioFifo, inner: R) -> Self {
+impl <C: Command> MulticoreRunner<C> {
+    fn new(fifo: SioFifo, inner: C) -> Self {
         Self { fifo, inner }
     }
 
     fn run(&mut self) -> ! {
         loop {
-            let addr = self.fifo.read_blocking() as *mut String;
+            let addr = self.fifo.read_blocking() as *mut (Vec<String>, Vec<String>);
             debug!("core1 read {:X}", addr);
             let line = unsafe { Box::from_raw(addr) };
-            for res in self.inner.push_line(*line) {
-                let boxed = Box::new(res);
+            let (args, input) = *line;
+            for res in self.inner.exec(args, input) {
+                let boxed = Box::new(Some(res));
                 debug!("core1 write some");
                 self.fifo.write_blocking(Box::into_raw(boxed) as u32);
             }
@@ -82,15 +86,16 @@ impl <R: ConsoleRunner> MulticoreRunner<R> {
     }
 }
 
-pub fn create_multicore_runner(mut fifo: SioFifo, runner: impl ConsoleRunner + 'static) -> MulticoreProxy {
+pub fn create_multicore_runner(fifo0: SioFifo, runner: impl Command + 'static) -> MulticoreProxy {
     let f = move || {
-        let fifo = unsafe { Sio::new(Peripherals::steal().SIO).fifo };
-        let mut multicore_runner = MulticoreRunner::new(fifo, runner);
+        let fifo1 = unsafe { Sio::new(Peripherals::steal().SIO).fifo };
+        let mut multicore_runner = MulticoreRunner::new(fifo1, runner);
         debug!("core1: run!");
         multicore_runner.run()
     };
-    start_core1_with_fn(&mut fifo, f);
-    MulticoreProxy { fifo }
+    let fifo0 = singleton!(: SioFifo = fifo0).unwrap();
+    start_core1_with_fn(fifo0, f);
+    MulticoreProxy { fifo: fifo0 }
 }
 
 static mut CORE1_FN : Option<Box<dyn FnOnce()>> = None;

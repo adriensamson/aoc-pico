@@ -1,4 +1,4 @@
-use core::ptr::{addr_of, addr_of_mut};
+use core::ptr::addr_of_mut;
 use cortex_m_rt::heap_start;
 use defmt::debug;
 use embedded_alloc::LlffHeap as Heap;

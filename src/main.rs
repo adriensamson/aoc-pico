@@ -9,7 +9,7 @@ use panic_probe as _;
 use defmt_rtt as _;
 
 mod aoc;
-//mod multicore;
+mod multicore;
 mod memory;
 
 use defmt::debug;
@@ -23,7 +23,7 @@ use rp_pico::pac::interrupt;
 use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
 use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, ConsoleOutput, ConsoleUartWriter};
-//use crate::multicore::{create_multicore_runner, MulticoreProxy};
+use crate::multicore::{create_multicore_runner};
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 
 type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
@@ -94,11 +94,11 @@ fn init() -> (Shared, Local) {
     ).unwrap().split();
 
     let aoc_runner = AocRunner::new();
-    //let fifo = sio.fifo;
-    //let multicore_runner = create_multicore_runner(fifo, aoc_runner);
-    //debug!("multicore started");
+    let fifo = sio.fifo;
+    let multicore_runner = create_multicore_runner(fifo, aoc_runner);
+    debug!("multicore started");
     let mut commands = Commands::new();
-    commands.add("aoc", aoc_runner);
+    commands.add("aoc", multicore_runner);
 
     let console = Console::new(commands);
     let console_writer = ConsoleUartWriter(uart_tx);
