@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use core::mem::MaybeUninit;
 use cortex_m::peripheral::NVIC;
 use panic_probe as _;
 use defmt_rtt as _;
@@ -21,21 +20,13 @@ use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader};
 use rp_pico::pac::UART0;
 use rp_pico::pac::interrupt;
 use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
+use aoc_pico::{give, give_away_cell, take};
 use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, ConsoleOutput, ConsoleUartWriter};
 use crate::multicore::{create_multicore_runner};
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 
 type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
-
-struct Shared {
-    console: Console,
-    console_writer: ConsoleUartWriter<UART0, UartPinout>,
-}
-
-struct Local {
-    uart_rx: Reader<UART0, UartPinout>,
-}
 
 fn idle() -> ! {
     debug!("stack pointer: {:x}", read_sp());
@@ -44,22 +35,22 @@ fn idle() -> ! {
     }
 }
 
-static mut SHARED: MaybeUninit<Shared> = MaybeUninit::uninit();
-static mut LOCAL: MaybeUninit<Local> = MaybeUninit::uninit();
+give_away_cell!(UART_RX: Reader<UART0, UartPinout>);
+give_away_cell!(CONSOLE: Console);
+give_away_cell!(CONSOLE_WRITER: ConsoleUartWriter<UART0, UartPinout>);
 
 #[entry]
 fn entry() -> ! {
-    let (shared, local) = init();
+    init();
+
     unsafe {
-        SHARED.write(shared);
-        LOCAL.write(local);
         NVIC::unmask(interrupt::UART0_IRQ);
     }
 
     idle()
 }
 
-fn init() -> (Shared, Local) {
+fn init() {
     unsafe { init_heap() };
     install_core0_stack_guard();
 
@@ -104,19 +95,16 @@ fn init() -> (Shared, Local) {
     let console_writer = ConsoleUartWriter(uart_tx);
     uart_rx.enable_rx_interrupt();
 
-    (Shared {
-        console,
-        console_writer,
-    }, Local {
-        uart_rx,
-    })
+    give!(UART_RX = uart_rx);
+    give!(CONSOLE = console);
+    give!(CONSOLE_WRITER = console_writer);
 }
 
 #[interrupt]
 fn UART0_IRQ() {
-    let uart_rx = unsafe { &mut LOCAL.assume_init_mut().uart_rx };
-    let console = unsafe { &mut SHARED.assume_init_mut().console };
-    let console_writer = unsafe { &mut SHARED.assume_init_mut().console_writer };
+    let uart_rx = take!(UART_RX);
+    let console = take!(CONSOLE);
+    let console_writer = take!(CONSOLE_WRITER);
 
     const CHUNK_SIZE : usize = 32;
     let mut buf = [0u8; CHUNK_SIZE];

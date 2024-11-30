@@ -1,8 +1,10 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::UnsafeCell;
 use core::ptr::addr_of;
 use cortex_m::singleton;
+use critical_section::Mutex;
 use defmt::debug;
 use rp_pico::hal::Sio;
 use rp_pico::hal::sio::SioFifo;
@@ -86,7 +88,7 @@ impl <C: Command> MulticoreRunner<C> {
     }
 }
 
-pub fn create_multicore_runner(fifo0: SioFifo, runner: impl Command + 'static) -> MulticoreProxy {
+pub fn create_multicore_runner(fifo0: SioFifo, runner: impl Command + Send + 'static) -> MulticoreProxy {
     let f = move || {
         let fifo1 = unsafe { Sio::new(Peripherals::steal().SIO).fifo };
         let mut multicore_runner = MulticoreRunner::new(fifo1, runner);
@@ -98,19 +100,27 @@ pub fn create_multicore_runner(fifo0: SioFifo, runner: impl Command + 'static) -
     MulticoreProxy { fifo: fifo0 }
 }
 
-static mut CORE1_FN : Option<Box<dyn FnOnce()>> = None;
+type MutexCell<T> = Mutex<UnsafeCell<T>>;
+
+static CORE1_FN : MutexCell<Option<Box<dyn FnOnce() + Send>>> = Mutex::new(UnsafeCell::new(None));
 extern "C" fn core1_entry() {
     debug!("core1: entry");
     install_core1_stack_guard();
-    let f = unsafe { CORE1_FN.take().unwrap() };
+    let f = critical_section::with(|cs| {
+        let cell = CORE1_FN.borrow(cs);
+        unsafe { (*cell.get()).take().unwrap() }
+    });
     f()
 }
 extern "C" {
     static core1_stack_start: u32;
 }
 
-fn start_core1_with_fn(fifo: &mut SioFifo, f: impl FnOnce() + 'static) {
-    unsafe { CORE1_FN = Some(Box::new(f)); }
+fn start_core1_with_fn(fifo: &mut SioFifo, f: impl FnOnce() + Send + 'static) {
+    critical_section::with(|cs| {
+        let cell = CORE1_FN.borrow(cs);
+        unsafe { *cell.get() = Some(Box::new(f)); }
+    });
     start_core1(fifo, addr_of!(core1_stack_start) as *mut u32, core1_entry as *const _);
 }
 
