@@ -30,16 +30,58 @@ impl Command for AocRunner {
     }
 }
 
-type AocDay = fn(Vec<String>) -> Box<dyn Iterator<Item = String> + Send>;
+type AocDayFn = fn(Vec<String>) -> Box<dyn Iterator<Item = String> + Send>;
 
 const NB_DAYS : usize = 1;
-const DAYS: [AocDay; NB_DAYS] = [
-    test_aoc
+const DAYS: [AocDayFn; NB_DAYS] = [
+    TestDay0::run
 ];
 
-fn test_aoc(input: Vec<String>) -> Box<dyn Iterator<Item = String> + Send> {
-    Box::new([
-        format!("lines={}", input.len()),
-        format!("max-cols={}", input.iter().map(|l| l.len()).max().unwrap_or_default()),
-    ].into_iter())
+trait AocDay: Send + Sized where Self: 'static {
+    fn new(input: Vec<String>) -> Self;
+
+    fn part1(&self) -> String { String::new() }
+    fn part2(&self) -> String { String::new() }
+
+    fn run(input: Vec<String>) -> Box<dyn Iterator<Item = String> + Send> {
+        Box::new(AocIter(Self::new(input), 0))
+    }
+}
+
+struct AocIter<D: AocDay>(D, u8);
+
+impl<D: AocDay> Iterator for AocIter<D> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.1 {
+            0 => {
+                self.1 = 1;
+                Some(self.0.part1())
+            },
+            1 => {
+                self.1 = 2;
+                Some(self.0.part2())
+            }
+            _ => None,
+        }
+    }
+}
+
+struct TestDay0 {
+    input: Vec<String>,
+}
+
+impl AocDay for TestDay0 {
+    fn new(input: Vec<String>) -> Self {
+        Self { input }
+    }
+
+    fn part1(&self) -> String {
+        format!("lines={}", self.input.len())
+    }
+
+    fn part2(&self) -> String {
+        format!("max-cols={}", self.input.iter().map(|l| l.len()).max().unwrap_or_default())
+    }
 }
