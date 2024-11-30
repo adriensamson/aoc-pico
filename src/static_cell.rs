@@ -1,79 +1,131 @@
-use core::cell::UnsafeCell;
+use core::cell::{UnsafeCell, RefCell};
 use core::mem::MaybeUninit;
 use critical_section::Mutex;
 
-pub struct GiveAwayCell<T>(UnsafeCell<MaybeUninit<T>>);
+pub trait CellToken {
+    type Inner;
+}
 
-unsafe impl<T> Send for GiveAwayCell<T> {}
-unsafe impl<T> Sync for GiveAwayCell<T> {}
+pub trait Given: CellToken {}
+pub trait Taken: Given {}
 
-impl Default for GiveAwayCell<MaybeUninit<()>> {
+pub struct GiveAwayCell<CT: CellToken>(UnsafeCell<MaybeUninit<CT::Inner>>);
+
+unsafe impl<CT: CellToken> Send for GiveAwayCell<CT> {}
+unsafe impl<CT: CellToken> Sync for GiveAwayCell<CT> {}
+
+impl<CT: CellToken> Default for GiveAwayCell<CT> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> GiveAwayCell<T> {
+impl<CT: CellToken> GiveAwayCell<CT> {
     pub const fn new() -> Self {
         Self(UnsafeCell::new(MaybeUninit::uninit()))
     }
+}
 
-    /// # Safety
-    ///
-    /// You should write only once, before enabling interruptions
-    pub unsafe fn write(&self, value: T) {
-        *self.0.get() = MaybeUninit::new(value);
-    }
-
-    /// # Safety
-    ///
-    /// You should call assume_init or assume_init_mut in only one context (interruption),
-    /// given it has been initialized before
-    pub unsafe fn assume_init(&self) -> &T {
-        let mu = &*self.0.get();
-        mu.assume_init_ref()
-    }
-
-    /// # Safety
-    ///
-    /// You should call assume_init or assume_init_mut in only one context (interruption),
-    /// given it has been initialized before
-    #[allow(clippy::mut_from_ref)]
-    pub unsafe fn assume_init_mut(&self) -> &mut T {
-        let mu = &mut *self.0.get();
-        mu.assume_init_mut()
+impl<CT: Given> GiveAwayCell<CT> {
+     pub fn give(&self, value: CT::Inner) {
+        unsafe { *self.0.get() = MaybeUninit::new(value); }
     }
 }
 
-pub struct SharedCell<T>(Mutex<UnsafeCell<MaybeUninit<T>>>);
+impl<CT: Taken> GiveAwayCell<CT> {
+    pub fn take(&self) -> &'static mut CT::Inner {
+        let mu = unsafe { &mut *self.0.get() };
+        unsafe { mu.assume_init_mut() }
+    }
+}
 
-impl Default for SharedCell<MaybeUninit<()>> {
+pub struct SharedCell<CT: CellToken>(Mutex<RefCell<MaybeUninit<CT::Inner>>>);
+
+impl<CT: CellToken> Default for SharedCell<CT> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> SharedCell<T> {
+impl<CT: CellToken> SharedCell<CT> {
     pub const fn new() -> Self {
-        Self(Mutex::new(UnsafeCell::new(MaybeUninit::uninit())))
+        Self(Mutex::new(RefCell::new(MaybeUninit::uninit())))
     }
+}
 
-    pub fn write(&self, value: T) {
+impl<CT: Given> SharedCell<CT> {
+    pub fn give(&self, value: CT::Inner) {
         critical_section::with(|cs| {
             let cell = self.0.borrow(cs);
-            unsafe { *cell.get() = MaybeUninit::new(value); }
+            cell.replace(MaybeUninit::new(value));
         })
-
     }
 
-    /// # Safety
-    ///
-    /// You should call lock only if it has been initialized before
-    pub unsafe fn lock<F: FnOnce(&mut T) -> R, R>(&self, f: F) -> R {
+    pub fn with<F: FnOnce(&mut CT::Inner) -> R, R>(&self, f: F) -> R {
         critical_section::with(|cs| {
             let cell = self.0.borrow(cs);
-            let data = unsafe { (*cell.get()).assume_init_mut() };
+            let mut mu = cell.borrow_mut();
+            let data = unsafe { mu.assume_init_mut() };
             f(data)
         })
     }
 }
+
+#[macro_export]
+macro_rules! give_away_cell {
+    ($token:ident : $ty:ty) => {
+        #[allow(non_snake_case)]
+        mod $token {
+            pub(crate) struct Token;
+            pub(crate) static CELL: $crate::static_cell::GiveAwayCell<Token> = $crate::static_cell::GiveAwayCell::new();
+        }
+        impl $crate::static_cell::CellToken for $token::Token {
+            type Inner = $ty;
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! shared_cell {
+    ($token:ident : $ty:ty) => {
+        #[allow(non_snake_case)]
+        mod $token {
+            pub(crate) struct Token;
+            pub(crate) static CELL: $crate::static_cell::SharedCell<Token> = $crate::static_cell::SharedCell::new();
+        }
+        impl $crate::static_cell::CellToken for $token::Token {
+            type Inner = $ty;
+        }
+    };
+}
+
+
+#[macro_export]
+macro_rules! give {
+    ($token:ident = $value:expr) => {
+        {
+            #[allow(non_local_definitions)]
+            impl $crate::static_cell::Given for $token::Token {}
+            $token::CELL.give($value)
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! take {
+    ($token:ident) => {
+        {
+            #[allow(non_local_definitions)]
+            impl $crate::static_cell::Taken for $token::Token {}
+            $token::CELL.take()
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! borrow {
+    ($token:ident, $f:expr) => {
+        $token::CELL.with($f)
+    }
+}
+
