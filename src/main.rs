@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use core::mem::MaybeUninit;
 use cortex_m::peripheral::NVIC;
 use panic_probe as _;
 use defmt_rtt as _;
@@ -23,6 +22,7 @@ use rp_pico::pac::interrupt;
 use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
 use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, ConsoleOutput, ConsoleUartWriter};
+use aoc_pico::static_cell::{GiveAwayCell, SharedCell};
 use crate::multicore::{create_multicore_runner};
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 
@@ -44,8 +44,8 @@ fn idle() -> ! {
     }
 }
 
-static mut SHARED: MaybeUninit<Shared> = MaybeUninit::uninit();
-static mut LOCAL: MaybeUninit<Local> = MaybeUninit::uninit();
+static SHARED: SharedCell<Shared> = SharedCell::new();
+static LOCAL: GiveAwayCell<Local> = GiveAwayCell::new();
 
 #[entry]
 fn entry() -> ! {
@@ -115,16 +115,18 @@ fn init() -> (Shared, Local) {
 #[interrupt]
 fn UART0_IRQ() {
     let uart_rx = unsafe { &mut LOCAL.assume_init_mut().uart_rx };
-    let console = unsafe { &mut SHARED.assume_init_mut().console };
-    let console_writer = unsafe { &mut SHARED.assume_init_mut().console_writer };
+    unsafe { SHARED.lock(|shared| {
+        let console = &mut shared.console;
+        let console_writer = &mut shared.console_writer;
 
-    const CHUNK_SIZE : usize = 32;
-    let mut buf = [0u8; CHUNK_SIZE];
+        const CHUNK_SIZE : usize = 32;
+        let mut buf = [0u8; CHUNK_SIZE];
 
-    while let Ok(count) = uart_rx.read_raw(&mut buf) {
-        console.push(&buf[..count]);
-        for out in &mut *console {
-            console_writer.output(&out);
+        while let Ok(count) = uart_rx.read_raw(&mut buf) {
+            console.push(&buf[..count]);
+            for out in &mut *console {
+                console_writer.output(&out);
+            }
         }
-    }
+    }); }
 }
