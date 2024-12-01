@@ -18,16 +18,26 @@ impl AocDay for AocDay1 {
                 right.push(nums[1]);
             }
         }
+        left.sort_unstable();
+        right.sort_unstable();
         Self { left, right }
     }
 
     fn part1(&self) -> String {
-        let mut left_sorted = self.left.clone();
-        left_sorted.sort_unstable();
-        let mut right_sorted = self.right.clone();
-        right_sorted.sort_unstable();
-        let sum : u32= left_sorted.into_iter().zip(right_sorted)
-            .map(|(left, right)| left.abs_diff(right))
+        let sum : u32 = self.left.iter().zip(self.right.iter())
+            .map(|(&left, &right)| left.abs_diff(right))
+            .sum();
+        sum.to_string()
+    }
+
+    fn part2(&self) -> String {
+        let sum : u32 = self.left.iter()
+            .copied()
+            .map(|l| {
+                let before = self.right.partition_point(|r| *r < l);
+                let count = self.right[before..].partition_point(|r| *r <= l) as u32;
+                l * count
+            })
             .sum();
         sum.to_string()
     }
@@ -50,5 +60,11 @@ mod test {
     fn test_part1() {
         let day = AocDay1::new(DATA.lines().map(ToString::to_string).collect());
         assert_eq!(day.part1(), "11");
+    }
+
+    #[test]
+    fn test_part2() {
+        let day = AocDay1::new(DATA.lines().map(ToString::to_string).collect());
+        assert_eq!(day.part2(), "31");
     }
 }

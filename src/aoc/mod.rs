@@ -61,11 +61,11 @@ impl<D: AocDay> Iterator for AocIter<D> {
         match self.1 {
             0 => {
                 self.1 = 1;
-                Some(self.0.part1())
+                Some(format!("Part1: {}", self.0.part1()))
             },
             1 => {
                 self.1 = 2;
-                Some(self.0.part2())
+                Some(format!("Part2: {}", self.0.part2()))
             }
             _ => None,
         }
