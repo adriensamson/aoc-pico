@@ -30,18 +30,29 @@ impl From<Vec<u8>> for EscapeSequence {
 
 #[derive(Default)]
 pub(crate) struct InputParser {
-    buffer: VecDeque<u8>,
+    buffers: VecDeque<VecDeque<u8>>,
 }
 
 impl InputParser {
     pub fn new() -> Self {
         Self {
-            buffer: VecDeque::new(),
+            buffers: VecDeque::new(),
         }
     }
 
-    pub fn push(&mut self, buf: &[u8]) {
-        self.buffer.extend(buf);
+    pub fn push(&mut self, buf: Vec<u8>) {
+        self.buffers.push_back(buf.into())
+    }
+
+    fn pop_byte(&mut self) -> Option<u8> {
+        while let Some(buf) = self.buffers.front_mut() {
+            if let Some(b) = buf.pop_front() {
+                return Some(b);
+            } else {
+                self.buffers.pop_front();
+            }
+        }
+        None
     }
 }
 
@@ -52,11 +63,11 @@ impl Iterator for InputParser {
         let mut state = State::Normal;
         let mut current_line = String::new();
         loop {
-            let b = match self.buffer.pop_front() {
+            let b = match self.pop_byte() {
                 Some(b) => b,
                 None => {
                     //debug!("no more bytes");
-                    self.buffer.extend(state.as_bytes());
+                    self.push(state.to_bytes());
                     return if current_line.is_empty() { None } else { Some(Input::IncompleteLine(current_line)) }
                 },
             };
@@ -127,9 +138,9 @@ enum State {
 }
 
 impl State {
-    fn as_bytes(&self) -> &[u8] {
+    fn to_bytes(self) -> Vec<u8> {
         match self {
-            State::Normal => &[],
+            State::Normal => Vec::new(),
             State::InUtf8(v) => v,
             State::InEscape(v) => v,
         }
@@ -215,7 +226,7 @@ impl Console {
         }
     }
 
-    pub fn push(&mut self, buf: &[u8]) {
+    pub fn push(&mut self, buf: Vec<u8>) {
         self.parser.push(buf);
     }
 
@@ -316,18 +327,18 @@ impl<U: UartDevice, P: ValidUartPinout<U>> ConsoleOutput for ConsoleUartWriter<U
 #[test]
 fn test_input_parser() {
     let mut parser = InputParser::new();
-    parser.push(b"abc");
+    parser.push(b"abc".to_vec());
     assert_eq!(parser.next(), Some(Input::IncompleteLine("abc".into())));
     assert_eq!(parser.next(), None);
-    parser.push(b"\x1b");
+    parser.push(b"\x1b".to_vec());
     assert_eq!(parser.next(), None);
-    parser.push(b"[m");
+    parser.push(b"[m".to_vec());
     assert_eq!(parser.next(), Some(Input::EscapeSequence(EscapeSequence::Unknown(b"\x1b[m".into()))));
     assert_eq!(parser.next(), None);
-    parser.push(b"pppp\r");
+    parser.push(b"pppp\r".to_vec());
     assert_eq!(parser.next(), Some(Input::Line("pppp".into())));
     assert_eq!(parser.next(), None);
-    parser.push(b"\x04");
+    parser.push(b"\x04".to_vec());
     assert_eq!(parser.next(), Some(Input::Control('\x04')));
     assert_eq!(parser.next(), None);
 }
@@ -335,21 +346,21 @@ fn test_input_parser() {
 #[test]
 fn test_console() {
     let mut console = Console::new(Commands::default());
-    console.push(b"\r");
+    console.push(b"\r".to_vec());
     assert_eq!(console.next(), Some(b"\r\n> ".into()));
     assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
     assert_eq!(console.next(), None);
-    console.push(b"abc\r");
+    console.push(b"abc\r".to_vec());
     assert_eq!(console.next(), Some(b"abc\r\n> ".into()));
     assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
     assert_eq!(console.next(), None);
-    console.push(b"abc <\r");
+    console.push(b"abc <\r".to_vec());
     assert_eq!(console.next(), Some(b"abc <\r\n< ".into()));
     assert_eq!(console.next(), None);
-    console.push(b"plop\r");
+    console.push(b"plop\r".to_vec());
     assert_eq!(console.next(), Some(b"plop\r\n< ".into()));
     assert_eq!(console.next(), None);
-    console.push(b"\x04");
+    console.push(b"\x04".to_vec());
     assert_eq!(console.next(), Some(b"\r\n> ".into()));
     assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
     assert_eq!(console.next(), None);

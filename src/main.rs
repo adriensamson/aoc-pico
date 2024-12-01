@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use alloc::vec::Vec;
 use cortex_m::peripheral::NVIC;
 use panic_probe as _;
 use defmt_rtt as _;
@@ -15,7 +16,7 @@ use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock};
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
 use rp_pico::hal::gpio::{FunctionUart, PullDown};
-use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader};
+use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader, UartDevice, ValidUartPinout};
 use rp_pico::pac::UART0;
 use rp_pico::pac::interrupt;
 use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
@@ -106,12 +107,20 @@ fn UART0_IRQ() {
     let console_writer = take!(CONSOLE_WRITER);
 
     const CHUNK_SIZE : usize = 32;
-    let mut buf = [0u8; CHUNK_SIZE];
 
-    while let Ok(count) = uart_rx.read_raw(&mut buf) {
-        console.push(&buf[..count]);
+    while let Some(vec) = read_into_vec(uart_rx, CHUNK_SIZE) {
+        console.push(vec);
         for out in &mut *console {
             console_writer.output(&out);
         }
     }
+}
+
+fn read_into_vec<D: UartDevice, P: ValidUartPinout<D>>(uart: &Reader<D, P>, max_len: usize) -> Option<Vec<u8>> {
+    let mut vec = Vec::with_capacity(max_len);
+    let cap = vec.spare_capacity_mut();
+    let buf = unsafe {core::slice::from_raw_parts_mut(cap.as_mut_ptr() as *mut u8, cap.len())};
+    let len = uart.read_raw(buf).ok()?;
+    unsafe { vec.set_len(vec.len() + len) };
+    Some(vec)
 }
