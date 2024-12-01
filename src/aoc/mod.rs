@@ -1,9 +1,9 @@
+use crate::aoc::day1::AocDay1;
+use crate::shell::Command;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::aoc::day1::AocDay1;
-use crate::shell::{Command};
 
 mod day1;
 
@@ -19,7 +19,11 @@ impl Command for AocRunner {
     type Output = Box<dyn Iterator<Item = String> + Send>;
 
     fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output {
-        let day = args.first().map(String::as_str).unwrap_or("0").parse::<usize>();
+        let day = args
+            .first()
+            .map(String::as_str)
+            .unwrap_or("0")
+            .parse::<usize>();
         if day.is_err() {
             return Box::new(Some(String::from("bad day")).into_iter());
         }
@@ -28,24 +32,30 @@ impl Command for AocRunner {
             return Box::new(Some(String::from("bad day")).into_iter());
         }
         Box::new(
-            Some(String::from("running...")).into_iter().chain(DAYS[day](input)),
+            Some(String::from("running..."))
+                .into_iter()
+                .chain(DAYS[day](input)),
         )
     }
 }
 
 type AocDayFn = fn(Vec<String>) -> Box<dyn Iterator<Item = String> + Send>;
 
-const NB_DAYS : usize = 2;
-const DAYS: [AocDayFn; NB_DAYS] = [
-    TestDay0::run,
-    AocDay1::run,
-];
+const NB_DAYS: usize = 2;
+const DAYS: [AocDayFn; NB_DAYS] = [TestDay0::run, AocDay1::run];
 
-trait AocDay: Send + Sized where Self: 'static {
+trait AocDay: Send + Sized
+where
+    Self: 'static,
+{
     fn new(input: Vec<String>) -> Self;
 
-    fn part1(&self) -> String { String::new() }
-    fn part2(&self) -> String { String::new() }
+    fn part1(&self) -> String {
+        String::new()
+    }
+    fn part2(&self) -> String {
+        String::new()
+    }
 
     fn run(input: Vec<String>) -> Box<dyn Iterator<Item = String> + Send> {
         Box::new(AocIter(Self::new(input), 0))
@@ -62,7 +72,7 @@ impl<D: AocDay> Iterator for AocIter<D> {
             0 => {
                 self.1 = 1;
                 Some(format!("Part1: {}", self.0.part1()))
-            },
+            }
             1 => {
                 self.1 = 2;
                 Some(format!("Part2: {}", self.0.part2()))
@@ -86,6 +96,9 @@ impl AocDay for TestDay0 {
     }
 
     fn part2(&self) -> String {
-        format!("max-cols={}", self.input.iter().map(|l| l.len()).max().unwrap_or_default())
+        format!(
+            "max-cols={}",
+            self.input.iter().map(|l| l.len()).max().unwrap_or_default()
+        )
     }
 }

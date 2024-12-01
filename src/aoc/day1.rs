@@ -1,6 +1,6 @@
+use crate::aoc::AocDay;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use crate::aoc::AocDay;
 
 pub struct AocDay1 {
     left: Vec<u32>,
@@ -12,7 +12,10 @@ impl AocDay for AocDay1 {
         let mut left = Vec::with_capacity(input.len());
         let mut right = Vec::with_capacity(input.len());
         for line in &input {
-            let nums : Vec<u32> = line.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let nums: Vec<u32> = line
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if nums.len() == 2 {
                 left.push(nums[0]);
                 right.push(nums[1]);
@@ -24,14 +27,19 @@ impl AocDay for AocDay1 {
     }
 
     fn part1(&self) -> String {
-        let sum : u32 = self.left.iter().zip(self.right.iter())
+        let sum: u32 = self
+            .left
+            .iter()
+            .zip(self.right.iter())
             .map(|(&left, &right)| left.abs_diff(right))
             .sum();
         sum.to_string()
     }
 
     fn part2(&self) -> String {
-        let sum : u32 = self.left.iter()
+        let sum: u32 = self
+            .left
+            .iter()
             .copied()
             .map(|l| {
                 let before = self.right.partition_point(|r| *r < l);
@@ -45,11 +53,11 @@ impl AocDay for AocDay1 {
 
 #[cfg(test)]
 mod test {
-    use crate::aoc::AocDay;
     use crate::aoc::day1::AocDay1;
+    use crate::aoc::AocDay;
     use alloc::string::ToString;
 
-    const DATA : &str = "3   4
+    const DATA: &str = "3   4
 4   3
 2   5
 1   3

@@ -3,26 +3,28 @@
 
 extern crate alloc;
 
-mod multicore;
-mod memory;
 mod app;
+mod memory;
+mod multicore;
 
 #[allow(unused_imports)]
-use panic_probe;
-#[allow(unused_imports)]
 use defmt_rtt;
+#[allow(unused_imports)]
+use panic_probe;
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel};
 use rp_pico::hal::dma::single_buffer::{Config, Transfer};
+use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel};
 use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout, Writer};
 
-
-fn read_into_vec<D: UartDevice, P: ValidUartPinout<D>>(uart: &Reader<D, P>, max_len: usize) -> Option<Vec<u8>> {
+fn read_into_vec<D: UartDevice, P: ValidUartPinout<D>>(
+    uart: &Reader<D, P>,
+    max_len: usize,
+) -> Option<Vec<u8>> {
     let mut vec = Vec::with_capacity(max_len);
     let cap = vec.spare_capacity_mut();
-    let buf = unsafe {core::slice::from_raw_parts_mut(cap.as_mut_ptr() as *mut u8, cap.len())};
+    let buf = unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr() as *mut u8, cap.len()) };
     let len = uart.read_raw(buf).ok()?;
     unsafe { vec.set_len(vec.len() + len) };
     Some(vec)
@@ -69,17 +71,17 @@ enum ConsoleUartDmaWriter<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>
     Poisoned,
 }
 
-impl <D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter<D, U, P> {
+impl<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter<D, U, P> {
     fn output(&mut self, line: Vec<u8>) {
         match core::mem::replace(self, Self::Poisoned) {
             Self::Ready(writer, ch) => {
                 *self = Self::Transferring(Config::new(ch, VecReadTarget(line), writer).start())
-            },
+            }
             Self::Transferring(transfer) => {
                 let (ch, _, writer) = transfer.wait();
                 *self = Self::Ready(writer, ch);
                 self.output(line);
-            },
+            }
             Self::Poisoned => unreachable!(),
         }
     }
@@ -90,7 +92,7 @@ impl <D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWrite
             Self::Transferring(transfer) => {
                 let (ch, _, writer) = transfer.wait();
                 *self = Self::Ready(writer, ch);
-            },
+            }
             Self::Poisoned => unreachable!(),
         }
     }

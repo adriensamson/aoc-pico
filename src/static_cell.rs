@@ -1,4 +1,4 @@
-use core::cell::{UnsafeCell, RefCell};
+use core::cell::{RefCell, UnsafeCell};
 use core::mem::MaybeUninit;
 use critical_section::Mutex;
 
@@ -27,8 +27,10 @@ impl<CT: CellToken> GiveAwayCell<CT> {
 }
 
 impl<CT: Given> GiveAwayCell<CT> {
-     pub fn give(&self, value: CT::Inner) {
-        unsafe { *self.0.get() = MaybeUninit::new(value); }
+    pub fn give(&self, value: CT::Inner) {
+        unsafe {
+            *self.0.get() = MaybeUninit::new(value);
+        }
     }
 }
 
@@ -77,7 +79,8 @@ macro_rules! give_away_cell {
         #[allow(non_snake_case)]
         mod $token {
             pub(crate) struct Token;
-            pub(crate) static CELL: $crate::static_cell::GiveAwayCell<Token> = $crate::static_cell::GiveAwayCell::new();
+            pub(crate) static CELL: $crate::static_cell::GiveAwayCell<Token> =
+                $crate::static_cell::GiveAwayCell::new();
         }
         impl $crate::static_cell::CellToken for $token::Token {
             type Inner = $ty;
@@ -91,7 +94,8 @@ macro_rules! shared_cell {
         #[allow(non_snake_case)]
         mod $token {
             pub(crate) struct Token;
-            pub(crate) static CELL: $crate::static_cell::SharedCell<Token> = $crate::static_cell::SharedCell::new();
+            pub(crate) static CELL: $crate::static_cell::SharedCell<Token> =
+                $crate::static_cell::SharedCell::new();
         }
         impl $crate::static_cell::CellToken for $token::Token {
             type Inner = $ty;
@@ -99,33 +103,27 @@ macro_rules! shared_cell {
     };
 }
 
-
 #[macro_export]
 macro_rules! give {
-    ($token:ident = $value:expr) => {
-        {
-            #[allow(non_local_definitions)]
-            impl $crate::static_cell::Given for $token::Token {}
-            $token::CELL.give($value)
-        }
-    }
+    ($token:ident = $value:expr) => {{
+        #[allow(non_local_definitions)]
+        impl $crate::static_cell::Given for $token::Token {}
+        $token::CELL.give($value)
+    }};
 }
 
 #[macro_export]
 macro_rules! take {
-    ($token:ident) => {
-        {
-            #[allow(non_local_definitions)]
-            impl $crate::static_cell::Taken for $token::Token {}
-            $token::CELL.take()
-        }
-    }
+    ($token:ident) => {{
+        #[allow(non_local_definitions)]
+        impl $crate::static_cell::Taken for $token::Token {}
+        $token::CELL.take()
+    }};
 }
 
 #[macro_export]
 macro_rules! borrow {
     ($token:ident, $f:expr) => {
         $token::CELL.with($f)
-    }
+    };
 }
-

@@ -1,23 +1,26 @@
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
+    use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
+    use crate::multicore::create_multicore_runner;
+    use crate::{read_into_vec, ConsoleUartDmaWriter, OutQueue};
+    use aoc_pico::aoc::AocRunner;
+    use aoc_pico::shell::{Commands, Console};
     use cortex_m::peripheral::NVIC;
     use defmt::debug;
-    use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Watchdog};
     use rp_pico::hal::clocks::init_clocks_and_plls;
+    use rp_pico::hal::dma::{DMAExt, SingleChannel, CH0};
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
     use rp_pico::hal::gpio::{FunctionUart, PullDown};
     use rp_pico::hal::uart::{Reader, UartConfig, UartPeripheral};
-    use rp_pico::pac::UART0;
+    use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Watchdog};
     use rp_pico::pac::interrupt;
+    use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
-    use rp_pico::hal::dma::{DMAExt, SingleChannel, CH0};
-    use aoc_pico::aoc::AocRunner;
-    use aoc_pico::shell::{Commands, Console};
-    use crate::multicore::create_multicore_runner;
-    use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
-    use crate::{read_into_vec, ConsoleUartDmaWriter, OutQueue};
 
-    type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
+    type UartPinout = (
+        Pin<Gpio0, FunctionUart, PullDown>,
+        Pin<Gpio1, FunctionUart, PullDown>,
+    );
 
     #[shared]
     struct Shared {
@@ -46,7 +49,8 @@ mod app {
             pac.PLL_USB,
             &mut pac.RESETS,
             &mut watchdog,
-        ).unwrap();
+        )
+        .unwrap();
 
         let sio = Sio::new(pac.SIO);
 
@@ -61,10 +65,10 @@ mod app {
             pac.UART0,
             (pins.gpio0.into_function(), pins.gpio1.into_function()),
             &mut pac.RESETS,
-        ).enable(
-            UartConfig::default(),
-            clocks.peripheral_clock.freq(),
-        ).unwrap().split();
+        )
+        .enable(UartConfig::default(), clocks.peripheral_clock.freq())
+        .unwrap()
+        .split();
 
         let aoc_runner = AocRunner::new();
         let fifo = sio.fifo;
@@ -80,13 +84,16 @@ mod app {
         dma_chans.ch0.enable_irq0();
         let console_writer = ConsoleUartDmaWriter::Ready(uart_tx, dma_chans.ch0);
 
-        (Shared {
-            out_queue: OutQueue::new(),
-        }, Local {
-            uart_rx,
-            console,
-            console_writer,
-        })
+        (
+            Shared {
+                out_queue: OutQueue::new(),
+            },
+            Local {
+                uart_rx,
+                console,
+                console_writer,
+            },
+        )
     }
 
     #[idle]
@@ -97,7 +104,6 @@ mod app {
             cortex_m::asm::wfi()
         }
     }
-
 
     #[task(binds = UART0_IRQ, local = [uart_rx, console], shared = [out_queue])]
     fn uart0_irq(mut cx: uart0_irq::Context) {

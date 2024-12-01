@@ -65,8 +65,12 @@ impl Iterator for InputParser {
                 None => {
                     //debug!("no more bytes");
                     self.push(state.to_bytes());
-                    return if current_line.is_empty() { None } else { Some(Input::IncompleteLine(current_line)) }
-                },
+                    return if current_line.is_empty() {
+                        None
+                    } else {
+                        Some(Input::IncompleteLine(current_line))
+                    };
+                }
             };
             //debug!("state={:?} b={:X}", state, b);
             match state {
@@ -74,23 +78,21 @@ impl Iterator for InputParser {
                     match b {
                         b'\n' | b'\r' => {
                             return Some(Input::Line(current_line));
-                        },
-                        b'\x1b' => {
-                            state = State::InEscape(Vec::from([b]))
-                        },
+                        }
+                        b'\x1b' => state = State::InEscape(Vec::from([b])),
                         b'\x00'..=b'\x1f' | b'\x7f' => {
                             //debug!("control: {:X}", b);
-                            return Some(Input::Control(b as char))
-                        },
+                            return Some(Input::Control(b as char));
+                        }
                         b'\x20'..=b'\x7e' => {
                             current_line.push(b as char);
                             state = State::Normal;
-                        },
+                        }
                         b'\x80'..=b'\xff' => {
                             state = State::InUtf8(Vec::from([b]));
                         }
                     }
-                },
+                }
                 State::InUtf8(mut v) => {
                     v.push(b);
                     if !matches!(b, b'\x80'..=b'\xff') {
@@ -102,7 +104,7 @@ impl Iterator for InputParser {
                     } else {
                         state = State::InUtf8(v);
                     }
-                },
+                }
                 State::InEscape(mut v) => {
                     v.push(b);
                     if v.len() == 2 {
@@ -155,19 +157,28 @@ impl State {
 }*/
 
 pub trait Command {
-    type Output : Iterator<Item = String> + Send;
+    type Output: Iterator<Item = String> + Send;
 
     fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output;
 }
 
 trait DynCommand: Send {
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn Iterator<Item = String> + Send + 'static>;
+    fn exec(
+        &mut self,
+        args: Vec<String>,
+        input: Vec<String>,
+    ) -> Box<dyn Iterator<Item = String> + Send + 'static>;
 }
 
 impl<C: Command + Send> DynCommand for C
-where C::Output: 'static
+where
+    C::Output: 'static,
 {
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn Iterator<Item = String> + Send + 'static> {
+    fn exec(
+        &mut self,
+        args: Vec<String>,
+        input: Vec<String>,
+    ) -> Box<dyn Iterator<Item = String> + Send + 'static> {
         Box::new(self.exec(args, input))
     }
 }
@@ -175,11 +186,13 @@ where C::Output: 'static
 #[derive(Default)]
 pub struct Commands {
     names: Vec<&'static str>,
-    commands: Vec<Box<dyn DynCommand>>
+    commands: Vec<Box<dyn DynCommand>>,
 }
 
 impl Commands {
-    pub fn new() -> Self { Default::default() }
+    pub fn new() -> Self {
+        Default::default()
+    }
 
     pub fn add(&mut self, name: &'static str, command: impl Command + Send + 'static) {
         self.names.push(name);
@@ -187,7 +200,11 @@ impl Commands {
     }
 
     fn get(&mut self, name: &str) -> Option<&mut Box<dyn DynCommand>> {
-        let idx = self.names.iter().enumerate().find_map(|(i, &n)| (n == name).then_some(i))?;
+        let idx = self
+            .names
+            .iter()
+            .enumerate()
+            .find_map(|(i, &n)| (n == name).then_some(i))?;
         Some(&mut self.commands[idx])
     }
 }
@@ -200,14 +217,23 @@ pub struct Console {
 
 enum ConsoleState {
     Prompt(String),
-    ParsingInput {cmd_line: String, input: Vec<String>, current_line: String},
-    RunCommand {cmd_line: String, input: Vec<String> },
+    ParsingInput {
+        cmd_line: String,
+        input: Vec<String>,
+        current_line: String,
+    },
+    RunCommand {
+        cmd_line: String,
+        input: Vec<String>,
+    },
     RunningCommand(Box<dyn Iterator<Item = String> + Send>),
     Error(&'static str),
 }
 
 impl Default for ConsoleState {
-    fn default() -> Self { Self::Prompt(String::new()) }
+    fn default() -> Self {
+        Self::Prompt(String::new())
+    }
 }
 
 impl Console {
@@ -226,8 +252,8 @@ impl Console {
     fn eol(&self) -> &str {
         match &self.state {
             ConsoleState::Prompt(_) => "\r\n$ ",
-            ConsoleState::ParsingInput {..} => "\r\n< ",
-            ConsoleState::RunCommand {..} | ConsoleState::RunningCommand(_) => "\r\n> ",
+            ConsoleState::ParsingInput { .. } => "\r\n< ",
+            ConsoleState::RunCommand { .. } | ConsoleState::RunningCommand(_) => "\r\n> ",
             ConsoleState::Error(_) => "\r\n! ",
         }
     }
@@ -238,12 +264,16 @@ impl Iterator for Console {
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.state {
-            ConsoleState::RunCommand {cmd_line, input} => {
+            ConsoleState::RunCommand { cmd_line, input } => {
                 let mut args_iter = cmd_line.trim().split(' ').map(str::trim);
                 let name = args_iter.next().unwrap();
                 if let Some(command) = self.commands.get(name) {
                     let args = args_iter.map(ToString::to_string).collect();
-                    self.state = ConsoleState::RunningCommand(Box::new(command.exec(args, core::mem::take(input)).map(|s| String::from("\r\n> ") + &s)))
+                    self.state = ConsoleState::RunningCommand(Box::new(
+                        command
+                            .exec(args, core::mem::take(input))
+                            .map(|s| String::from("\r\n> ") + &s),
+                    ))
                 } else {
                     self.state = ConsoleState::Error("unknown command")
                 }
@@ -255,50 +285,61 @@ impl Iterator for Console {
                 }
                 self.state = ConsoleState::Prompt(String::new());
                 Some(self.eol().as_bytes().to_vec())
-            },
+            }
             ConsoleState::Error(err) => {
                 let mut res = err.to_string();
                 self.state = ConsoleState::Prompt(String::new());
                 res += self.eol();
                 Some(res.into_bytes())
-            },
-            ConsoleState::ParsingInput {cmd_line, input: input_lines, current_line, .. } => {
-                match self.parser.next()? {
-                    Input::Line(s) => {
-                        current_line.push_str(&s);
-                        input_lines.push(core::mem::take(current_line));
-                        Some((s + self.eol()).into_bytes())
-                    },
-                    Input::IncompleteLine(s) => {
-                        current_line.push_str(&s);
-                        Some(s.into_bytes())
-                    },
-                    Input::Control('\x04') => {
-                        input_lines.push(core::mem::take(current_line));
-                        self.state = ConsoleState::RunCommand {cmd_line: core::mem::take(cmd_line), input: core::mem::take(input_lines)};
-                        Some(self.eol().as_bytes().to_vec())
-                    },
-                    _ => Some(Vec::new())
-                }
-            },
-            ConsoleState::Prompt(prompt) => {
-                match self.parser.next()? {
-                    Input::Line(s) => {
-                        prompt.push_str(&s);
-                        if let Some(prompt) = prompt.strip_suffix('<') {
-                            self.state = ConsoleState::ParsingInput {cmd_line: prompt.to_string(), input: Vec::new(), current_line: String::new()};
-                        } else {
-                            self.state = ConsoleState::RunCommand { cmd_line: core::mem::take(prompt), input: Vec::new() };
-                        }
-                        Some((s + self.eol()).into_bytes())
-                    },
-                    Input::IncompleteLine(s) => {
-                        prompt.push_str(&s);
-                        Some(s.into_bytes())
-                    }
-                    _ => Some(Vec::new()),
-                }
             }
+            ConsoleState::ParsingInput {
+                cmd_line,
+                input: input_lines,
+                current_line,
+                ..
+            } => match self.parser.next()? {
+                Input::Line(s) => {
+                    current_line.push_str(&s);
+                    input_lines.push(core::mem::take(current_line));
+                    Some((s + self.eol()).into_bytes())
+                }
+                Input::IncompleteLine(s) => {
+                    current_line.push_str(&s);
+                    Some(s.into_bytes())
+                }
+                Input::Control('\x04') => {
+                    input_lines.push(core::mem::take(current_line));
+                    self.state = ConsoleState::RunCommand {
+                        cmd_line: core::mem::take(cmd_line),
+                        input: core::mem::take(input_lines),
+                    };
+                    Some(self.eol().as_bytes().to_vec())
+                }
+                _ => Some(Vec::new()),
+            },
+            ConsoleState::Prompt(prompt) => match self.parser.next()? {
+                Input::Line(s) => {
+                    prompt.push_str(&s);
+                    if let Some(prompt) = prompt.strip_suffix('<') {
+                        self.state = ConsoleState::ParsingInput {
+                            cmd_line: prompt.to_string(),
+                            input: Vec::new(),
+                            current_line: String::new(),
+                        };
+                    } else {
+                        self.state = ConsoleState::RunCommand {
+                            cmd_line: core::mem::take(prompt),
+                            input: Vec::new(),
+                        };
+                    }
+                    Some((s + self.eol()).into_bytes())
+                }
+                Input::IncompleteLine(s) => {
+                    prompt.push_str(&s);
+                    Some(s.into_bytes())
+                }
+                _ => Some(Vec::new()),
+            },
         }
     }
 }
@@ -312,7 +353,12 @@ fn test_input_parser() {
     parser.push(b"\x1b".to_vec());
     assert_eq!(parser.next(), None);
     parser.push(b"[m".to_vec());
-    assert_eq!(parser.next(), Some(Input::EscapeSequence(EscapeSequence::Unknown(b"\x1b[m".into()))));
+    assert_eq!(
+        parser.next(),
+        Some(Input::EscapeSequence(EscapeSequence::Unknown(
+            b"\x1b[m".into()
+        )))
+    );
     assert_eq!(parser.next(), None);
     parser.push(b"pppp\r".to_vec());
     assert_eq!(parser.next(), Some(Input::Line("pppp".into())));
