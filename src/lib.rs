@@ -7,3 +7,5 @@ extern crate std;
 pub mod shell;
 
 pub mod static_cell;
+
+pub mod aoc;

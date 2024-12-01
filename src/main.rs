@@ -7,7 +7,6 @@ use cortex_m::peripheral::NVIC;
 use panic_probe as _;
 use defmt_rtt as _;
 
-mod aoc;
 mod multicore;
 mod memory;
 
@@ -21,7 +20,7 @@ use rp_pico::pac::UART0;
 use rp_pico::pac::interrupt;
 use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
 use aoc_pico::{give, give_away_cell, take};
-use crate::aoc::AocRunner;
+use aoc_pico::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, ConsoleOutput, ConsoleUartWriter};
 use crate::multicore::{create_multicore_runner};
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};

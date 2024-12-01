@@ -328,7 +328,7 @@ fn test_input_parser() {
     assert_eq!(parser.next(), Some(Input::Line("pppp".into())));
     assert_eq!(parser.next(), None);
     parser.push(b"\x04");
-    assert_eq!(parser.next(), Some(Input::Control('\x03')));
+    assert_eq!(parser.next(), Some(Input::Control('\x04')));
     assert_eq!(parser.next(), None);
 }
 

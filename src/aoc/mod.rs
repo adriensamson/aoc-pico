@@ -2,7 +2,10 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use aoc_pico::shell::{Command};
+use crate::aoc::day1::AocDay1;
+use crate::shell::{Command};
+
+mod day1;
 
 pub struct AocRunner;
 
@@ -21,7 +24,7 @@ impl Command for AocRunner {
             return Box::new(Some(String::from("bad day")).into_iter());
         }
         let day = day.unwrap();
-        if day > NB_DAYS {
+        if day >= NB_DAYS {
             return Box::new(Some(String::from("bad day")).into_iter());
         }
         Box::new(
@@ -32,9 +35,10 @@ impl Command for AocRunner {
 
 type AocDayFn = fn(Vec<String>) -> Box<dyn Iterator<Item = String> + Send>;
 
-const NB_DAYS : usize = 1;
+const NB_DAYS : usize = 2;
 const DAYS: [AocDayFn; NB_DAYS] = [
-    TestDay0::run
+    TestDay0::run,
+    AocDay1::run,
 ];
 
 trait AocDay: Send + Sized where Self: 'static {
