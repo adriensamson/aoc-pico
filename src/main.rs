@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use cortex_m::peripheral::NVIC;
 use panic_probe as _;
@@ -20,7 +21,7 @@ use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader, UartDevice, ValidUa
 use rp_pico::pac::UART0;
 use rp_pico::pac::interrupt;
 use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
-use aoc_pico::{give, give_away_cell, take};
+use aoc_pico::{borrow, give, give_away_cell, shared_cell, take};
 use aoc_pico::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, ConsoleOutput, ConsoleUartWriter};
 use crate::multicore::{create_multicore_runner};
@@ -28,15 +29,9 @@ use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 
 type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
 
-fn idle() -> ! {
-    debug!("stack pointer: {:x}", read_sp());
-    loop {
-        cortex_m::asm::wfi()
-    }
-}
-
 give_away_cell!(UART_RX: Reader<UART0, UartPinout>);
 give_away_cell!(CONSOLE: Console);
+shared_cell!(OUT_DATA: VecDeque<Vec<u8>>);
 give_away_cell!(CONSOLE_WRITER: ConsoleUartWriter<UART0, UartPinout>);
 
 #[entry]
@@ -98,20 +93,34 @@ fn init() {
     give!(UART_RX = uart_rx);
     give!(CONSOLE = console);
     give!(CONSOLE_WRITER = console_writer);
+    give!(OUT_DATA = VecDeque::new());
 }
+
+fn idle() -> ! {
+    debug!("stack pointer: {:x}", read_sp());
+
+    let console_writer = take!(CONSOLE_WRITER);
+    loop {
+        if let Some(data) = borrow!(OUT_DATA, |vec| vec.pop_front()) {
+            console_writer.output(&data);
+        } else {
+            cortex_m::asm::wfi()
+        }
+    }
+}
+
 
 #[interrupt]
 fn UART0_IRQ() {
     let uart_rx = take!(UART_RX);
     let console = take!(CONSOLE);
-    let console_writer = take!(CONSOLE_WRITER);
 
     const CHUNK_SIZE : usize = 32;
 
     while let Some(vec) = read_into_vec(uart_rx, CHUNK_SIZE) {
         console.push(vec);
         for out in &mut *console {
-            console_writer.output(&out);
+            borrow!(OUT_DATA, |vec| vec.push_back(out));
         }
     }
 }
