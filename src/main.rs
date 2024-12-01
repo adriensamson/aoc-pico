@@ -13,18 +13,20 @@ mod multicore;
 mod memory;
 
 use defmt::debug;
-use rp_pico::hal::{Sio, gpio::Pin, gpio::Pins, Watchdog, Clock};
+use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Watchdog};
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
 use rp_pico::hal::gpio::{FunctionUart, PullDown};
-use rp_pico::hal::uart::{UartPeripheral, UartConfig, Reader, UartDevice, ValidUartPinout};
-use rp_pico::pac::UART0;
+use rp_pico::hal::uart::{Reader, UartConfig, UartDevice, UartPeripheral, ValidUartPinout, Writer};
+use rp_pico::pac::{UART0};
 use rp_pico::pac::interrupt;
 use rp_pico::{entry, XOSC_CRYSTAL_FREQ};
+use rp_pico::hal::dma::{Channel, ChannelIndex, DMAExt, ReadTarget, CH0};
+use rp_pico::hal::dma::single_buffer::{Config, Transfer};
 use aoc_pico::{borrow, give, give_away_cell, shared_cell, take};
 use aoc_pico::aoc::AocRunner;
-use aoc_pico::shell::{Commands, Console, ConsoleOutput, ConsoleUartWriter};
-use crate::multicore::{create_multicore_runner};
+use aoc_pico::shell::{Commands, Console};
+use crate::multicore::create_multicore_runner;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 
 type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, PullDown>);
@@ -32,7 +34,7 @@ type UartPinout = (Pin<Gpio0, FunctionUart, PullDown>, Pin<Gpio1, FunctionUart, 
 give_away_cell!(UART_RX: Reader<UART0, UartPinout>);
 give_away_cell!(CONSOLE: Console);
 shared_cell!(OUT_DATA: VecDeque<Vec<u8>>);
-give_away_cell!(CONSOLE_WRITER: ConsoleUartWriter<UART0, UartPinout>);
+give_away_cell!(CONSOLE_WRITER: ConsoleUartDmaWriter<CH0, UART0, UartPinout>);
 
 #[entry]
 fn entry() -> ! {
@@ -87,8 +89,10 @@ fn init() {
     commands.add("aoc", multicore_runner);
 
     let console = Console::new(commands);
-    let console_writer = ConsoleUartWriter(uart_tx);
     uart_rx.enable_rx_interrupt();
+
+    let dma_chans = pac.DMA.split(&mut pac.RESETS);
+    let console_writer = ConsoleUartDmaWriter::Ready(uart_tx, dma_chans.ch0);
 
     give!(UART_RX = uart_rx);
     give!(CONSOLE = console);
@@ -102,7 +106,7 @@ fn idle() -> ! {
     let console_writer = take!(CONSOLE_WRITER);
     loop {
         if let Some(data) = borrow!(OUT_DATA, |vec| vec.pop_front()) {
-            console_writer.output(&data);
+            console_writer.output(data);
         } else {
             cortex_m::asm::wfi()
         }
@@ -132,4 +136,44 @@ fn read_into_vec<D: UartDevice, P: ValidUartPinout<D>>(uart: &Reader<D, P>, max_
     let len = uart.read_raw(buf).ok()?;
     unsafe { vec.set_len(vec.len() + len) };
     Some(vec)
+}
+
+struct VecReadTarget(Vec<u8>);
+
+unsafe impl ReadTarget for VecReadTarget {
+    type ReceivedWord = u8;
+
+    fn rx_treq() -> Option<u8> {
+        None
+    }
+
+    fn rx_address_count(&self) -> (u32, u32) {
+        (self.0.as_ptr() as u32, self.0.len() as u32)
+    }
+
+    fn rx_increment(&self) -> bool {
+        true
+    }
+}
+
+enum ConsoleUartDmaWriter<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> {
+    Ready(Writer<U, P>, Channel<D>),
+    Transferring(Transfer<Channel<D>, VecReadTarget, Writer<U, P>>),
+    Poisoned,
+}
+
+impl <D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter<D, U, P> {
+    fn output(&mut self, line: Vec<u8>) {
+        match core::mem::replace(self, Self::Poisoned) {
+            Self::Ready(writer, ch) => {
+                *self = Self::Transferring(Config::new(ch, VecReadTarget(line), writer).start())
+            },
+            Self::Transferring(transfer) => {
+                let (ch, _, writer) = transfer.wait();
+                *self = Self::Ready(writer, ch);
+                self.output(line);
+            },
+            Self::Poisoned => unreachable!(),
+        }
+    }
 }

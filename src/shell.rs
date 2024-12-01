@@ -2,9 +2,6 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-//use defmt::{debug, Formatter};
-use rp_pico::hal::uart::{UartDevice, ValidUartPinout, Writer};
-
 #[allow(dead_code)]
 #[derive(Eq, PartialEq, Debug)]
 pub enum Input {
@@ -201,10 +198,6 @@ pub struct Console {
     state: ConsoleState,
 }
 
-pub trait ConsoleOutput {
-    fn output(&mut self, line: &[u8]);
-}
-
 enum ConsoleState {
     Prompt(String),
     ParsingInput {cmd_line: String, input: Vec<String>, current_line: String},
@@ -305,20 +298,6 @@ impl Iterator for Console {
                     }
                     _ => Some(Vec::new()),
                 }
-            }
-        }
-    }
-}
-
-pub struct ConsoleUartWriter<U: UartDevice, P: ValidUartPinout<U>>(pub Writer<U, P>);
-
-impl<U: UartDevice, P: ValidUartPinout<U>> ConsoleOutput for ConsoleUartWriter<U, P> {
-    fn output(&mut self, mut line: &[u8]) {
-        loop {
-            match self.0.write_raw(line) {
-                Ok([]) => break,
-                Ok(rem) => line = rem,
-                Err(_) => {},
             }
         }
     }
