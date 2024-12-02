@@ -4,8 +4,10 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use crate::aoc::day2::AocDay2;
 
 mod day1;
+mod day2;
 
 pub struct AocRunner;
 
@@ -41,8 +43,8 @@ impl Command for AocRunner {
 
 type AocDayFn = fn(Vec<String>) -> Box<dyn Iterator<Item = String> + Send>;
 
-const NB_DAYS: usize = 2;
-const DAYS: [AocDayFn; NB_DAYS] = [TestDay0::run, AocDay1::run];
+const NB_DAYS: usize = 3;
+const DAYS: [AocDayFn; NB_DAYS] = [TestDay0::run, AocDay1::run, AocDay2::run];
 
 trait AocDay: Send + Sized
 where
