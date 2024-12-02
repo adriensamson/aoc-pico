@@ -1,10 +1,10 @@
 use crate::aoc::day1::AocDay1;
+use crate::aoc::day2::AocDay2;
 use crate::shell::Command;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::aoc::day2::AocDay2;
 
 mod day1;
 mod day2;
@@ -14,6 +14,12 @@ pub struct AocRunner;
 impl AocRunner {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for AocRunner {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

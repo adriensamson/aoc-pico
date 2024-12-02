@@ -8,9 +8,9 @@ mod memory;
 mod multicore;
 
 #[allow(unused_imports)]
-use defmt_rtt;
+use defmt_rtt as _;
 #[allow(unused_imports)]
-use panic_probe;
+use panic_probe as _;
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;

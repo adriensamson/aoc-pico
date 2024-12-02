@@ -64,7 +64,7 @@ impl Iterator for InputParser {
                 Some(b) => b,
                 None => {
                     //debug!("no more bytes");
-                    self.push(state.to_bytes());
+                    self.push(state.into_bytes());
                     return if current_line.is_empty() {
                         None
                     } else {
@@ -137,7 +137,7 @@ enum State {
 }
 
 impl State {
-    fn to_bytes(self) -> Vec<u8> {
+    fn into_bytes(self) -> Vec<u8> {
         match self {
             State::Normal => Vec::new(),
             State::InUtf8(v) => v,
