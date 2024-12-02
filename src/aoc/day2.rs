@@ -18,11 +18,59 @@ impl AocDay for AocDay2 {
     fn part1(&self) -> String {
         self.reports.iter()
             .filter(|levels|
-                levels.windows(2).all(|l| (l[0] + 1..=l[0] + 3).contains(&l[1]))
-                || levels.windows(2).all(|l| (l[1] + 1..=l[1] + 3).contains(&l[0]))
+                is_safe(levels.iter().copied())
             )
             .count().to_string()
     }
+
+    fn part2(&self) -> String {
+        self.reports.iter()
+            .filter(|levels|
+                tolerate_one_bad(levels).any(is_safe)
+            )
+            .count().to_string()
+    }
+}
+
+fn is_safe(iter: impl Iterator<Item=u8> + Clone) -> bool {
+    iter.clone().pairs().all(|(l, r)| (l + 1..=l + 3).contains(&r)) || iter.pairs().all(|(l, r)| (r + 1..=r + 3).contains(&l))
+}
+
+trait Pairs: Iterator<Item=u8> + Sized {
+    fn pairs(self) -> PairsIter<Self>;
+}
+
+impl<I: Iterator<Item=u8>> Pairs for I {
+    fn pairs(self) -> PairsIter<Self> {
+        PairsIter {
+            inner: self,
+            prev: None,
+        }
+    }
+}
+
+struct PairsIter<I: Iterator<Item=u8>> {
+    inner: I,
+    prev: Option<u8>,
+}
+
+impl<I: Iterator<Item=u8>> Iterator for PairsIter<I> {
+    type Item = (u8, u8);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let val = self.inner.next()?;
+        if let Some(prev) = self.prev {
+            self.prev = Some(val);
+            Some((prev, val))
+        } else {
+            self.prev = Some(val);
+            self.next()
+        }
+    }
+}
+
+fn tolerate_one_bad(levels: &[u8]) -> impl Iterator<Item=impl Iterator<Item=u8> + Clone + use<'_>> + use<'_> {
+    (0..levels.len()).map(|skip| levels[0..skip].iter().copied().chain(levels[skip+1..].iter().copied()))
 }
 
 #[cfg(test)]
@@ -42,5 +90,6 @@ mod test {
     fn test() {
         let day = AocDay2::new(INPUT.lines().map(ToString::to_string).collect());
         assert_eq!(day.part1(), "2");
+        assert_eq!(day.part2(), "4");
     }
 }
