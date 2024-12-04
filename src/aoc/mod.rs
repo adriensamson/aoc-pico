@@ -1,11 +1,11 @@
 use crate::aoc::day1::AocDay1;
 use crate::aoc::day2::AocDay2;
+use crate::aoc::day3::AocDay3;
 use crate::shell::Command;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::aoc::day3::AocDay3;
 
 mod day1;
 mod day2;
