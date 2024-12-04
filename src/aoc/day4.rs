@@ -32,7 +32,7 @@ impl AocDay for AocDay4 {
     }
 
     fn part1(&self) -> String {
-        let mut sum = 0u32;
+        let mut count = 0u32;
 
         for x in 0..self.width() - 3 {
             // horizontal to right
@@ -42,7 +42,7 @@ impl AocDay for AocDay4 {
                     && self.letters[y][x + 2] == 'A'
                     && self.letters[y][x + 3] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
             // diagonal to bottom right
@@ -52,7 +52,7 @@ impl AocDay for AocDay4 {
                     && self.letters[y + 2][x + 2] == 'A'
                     && self.letters[y + 3][x + 3] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
             // diagonal to top right
@@ -62,7 +62,7 @@ impl AocDay for AocDay4 {
                     && self.letters[y - 2][x + 2] == 'A'
                     && self.letters[y - 3][x + 3] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
         }
@@ -74,7 +74,7 @@ impl AocDay for AocDay4 {
                     && self.letters[y][x - 2] == 'A'
                     && self.letters[y][x - 3] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
             // diagonal to bottom left
@@ -84,7 +84,7 @@ impl AocDay for AocDay4 {
                     && self.letters[y + 2][x - 2] == 'A'
                     && self.letters[y + 3][x - 3] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
             // diagonal to top left
@@ -94,7 +94,7 @@ impl AocDay for AocDay4 {
                     && self.letters[y - 2][x - 2] == 'A'
                     && self.letters[y - 3][x - 3] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
         }
@@ -105,7 +105,7 @@ impl AocDay for AocDay4 {
                     && self.letters[y + 2][x] == 'A'
                     && self.letters[y + 3][x] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
             for y in 3..self.height() {
@@ -114,12 +114,33 @@ impl AocDay for AocDay4 {
                     && self.letters[y - 2][x] == 'A'
                     && self.letters[y - 3][x] == 'S'
                 {
-                    sum += 1;
+                    count += 1;
                 }
             }
         }
 
-        sum.to_string()
+        count.to_string()
+    }
+
+    fn part2(&self) -> String {
+        let mut count = 0u32;
+
+        for x in 1..self.width() - 1 {
+            for y in 1..self.height() - 1 {
+                if self.letters[y][x] != 'A' {
+                    continue;
+                }
+                if (self.letters[y - 1][x - 1] == 'M' && self.letters[y + 1][x + 1] == 'S'
+                    || self.letters[y - 1][x - 1] == 'S' && self.letters[y + 1][x + 1] == 'M')
+                    && (self.letters[y - 1][x + 1] == 'M' && self.letters[y + 1][x - 1] == 'S'
+                        || self.letters[y - 1][x + 1] == 'S' && self.letters[y + 1][x - 1] == 'M')
+                {
+                    count += 1;
+                }
+            }
+        }
+
+        count.to_string()
     }
 }
 
@@ -144,5 +165,6 @@ MXMXAXMASX";
     fn test() {
         let day = AocDay4::new(INPUT.lines().map(ToString::to_string).collect());
         assert_eq!(day.part1(), "18");
+        assert_eq!(day.part2(), "9");
     }
 }
