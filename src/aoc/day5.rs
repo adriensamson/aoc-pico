@@ -1,7 +1,7 @@
+use crate::aoc::AocDay;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-
-use crate::aoc::AocDay;
+use defmt::debug;
 
 pub struct AocDay5 {
     rules: Vec<(u8, u8)>,
@@ -18,6 +18,28 @@ impl AocDay5 {
             }
         }
         true
+    }
+
+    fn reorder(&self, updates: &[u8]) -> Vec<u8> {
+        let mut reordered = updates.to_vec();
+        let mut i = 0;
+        while i < reordered.len() - 1 {
+            let mut j = i + 1;
+            while j < reordered.len() {
+                if self
+                    .rules
+                    .iter()
+                    .any(|&r| r == (reordered[j], reordered[i]))
+                {
+                    reordered.swap(i, j);
+                    j = i + 1;
+                } else {
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+        reordered
     }
 }
 
@@ -48,6 +70,19 @@ impl AocDay for AocDay5 {
             .updates
             .iter()
             .filter(|updates| self.is_correct(updates))
+            .map(|updates| updates[updates.len() / 2] as u32)
+            .sum();
+
+        sum.to_string()
+    }
+
+    fn part2(&self) -> String {
+        let sum: u32 = self
+            .updates
+            .iter()
+            .filter(|updates| !self.is_correct(updates))
+            .map(|updates| self.reorder(updates))
+            .inspect(|u| debug!("{=[u8]}", u))
             .map(|updates| updates[updates.len() / 2] as u32)
             .sum();
 
@@ -93,6 +128,7 @@ mod test {
     #[test]
     fn test() {
         let day = AocDay5::new(INPUT.lines().map(ToString::to_string).collect());
-        assert_eq!(day.part1(), "143")
+        assert_eq!(day.part1(), "143");
+        assert_eq!(day.part2(), "123");
     }
 }
