@@ -1,7 +1,6 @@
 use crate::aoc::AocDay;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use defmt::debug;
 
 pub struct AocDay5 {
     rules: Vec<(u8, u8)>,
@@ -82,7 +81,7 @@ impl AocDay for AocDay5 {
             .iter()
             .filter(|updates| !self.is_correct(updates))
             .map(|updates| self.reorder(updates))
-            .inspect(|u| debug!("{=[u8]}", u))
+            //.inspect(|u| debug!("{=[u8]}", u))
             .map(|updates| updates[updates.len() / 2] as u32)
             .sum();
 
