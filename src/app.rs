@@ -2,7 +2,7 @@
 mod app {
     use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
     use crate::multicore::create_multicore_runner;
-    use crate::{read_into_vec, ConsoleUartDmaWriter, MutexInputQueue, OutQueue};
+    use crate::{ConsoleUartDmaWriter, MutexInputQueue, OutQueue};
     use aoc_pico::aoc::AocRunner;
     use aoc_pico::shell::{Commands, Console, InputParser};
     use cortex_m::peripheral::NVIC;
@@ -122,11 +122,7 @@ mod app {
         let uart_rx = cx.local.uart_rx;
         let console_input = cx.local.console_input;
 
-        const CHUNK_SIZE: usize = 32;
-
-        while let Some(vec) = read_into_vec(uart_rx, CHUNK_SIZE) {
-            console_input.push(vec);
-        }
+        while let Ok(_) = console_input.read_into(uart_rx) {}
     }
 
     #[task(binds = DMA_IRQ_0, local = [console_writer], shared = [out_queue])]

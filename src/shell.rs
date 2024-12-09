@@ -27,34 +27,35 @@ impl From<Vec<u8>> for EscapeSequence {
 }
 
 pub trait InputQueue {
-    fn pop_byte(&mut self) -> Option<u8>;
+    fn pop(&mut self) -> Option<Vec<u8>>;
+}
+
+impl InputQueue for VecDeque<Vec<u8>> {
+    fn pop(&mut self) -> Option<Vec<u8>> {
+        self.pop_front()
+    }
 }
 
 #[derive(Default)]
 pub struct InputParser<Q: InputQueue> {
     queue: Q,
-    state: State,
+    current: VecDeque<u8>,
 }
 
 impl<Q: InputQueue> InputParser<Q> {
     pub fn new(queue: Q) -> Self {
         Self {
             queue,
-            state: State::default(),
+            current: VecDeque::new(),
         }
     }
-}
 
-impl InputQueue for VecDeque<VecDeque<u8>> {
     fn pop_byte(&mut self) -> Option<u8> {
-        while let Some(buf) = self.front_mut() {
-            if let Some(b) = buf.pop_front() {
-                return Some(b);
-            } else {
-                self.pop_front();
-            }
+        if let Some(byte) = self.current.pop_front() {
+            return Some(byte);
         }
-        None
+        self.current = self.queue.pop()?.into();
+        self.pop_byte()
     }
 }
 
@@ -62,12 +63,14 @@ impl<Q: InputQueue> Iterator for InputParser<Q> {
     type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let mut state = State::Normal;
         let mut current_line = String::with_capacity(64);
         loop {
-            let b = match self.queue.pop_byte() {
+            let b = match self.pop_byte() {
                 Some(b) => b,
                 None => {
                     //debug!("no more bytes");
+                    self.current = state.into_bytes().into();
                     return if current_line.is_empty() {
                         None
                     } else {
@@ -76,65 +79,55 @@ impl<Q: InputQueue> Iterator for InputParser<Q> {
                 }
             };
             //debug!("state={:?} b={:X}", state, b);
-            match &mut self.state {
+            match state {
                 State::Normal => {
                     match b {
                         b'\n' | b'\r' => {
                             return Some(Input::Line(current_line));
                         }
-                        b'\x1b' => self.state = State::InEscape(Vec::from([b])),
+                        b'\x1b' => state = State::InEscape(Vec::from([b])),
                         b'\x00'..=b'\x1f' | b'\x7f' => {
                             //debug!("control: {:X}", b);
                             return Some(Input::Control(b as char));
                         }
                         b'\x20'..=b'\x7e' => {
                             current_line.push(b as char);
-                            self.state = State::Normal;
+                            state = State::Normal;
                         }
                         b'\x80'..=b'\xff' => {
-                            self.state = State::InUtf8(Vec::from([b]));
+                            state = State::InUtf8(Vec::from([b]));
                         }
                     }
                 }
-                State::InUtf8(v) => {
+                State::InUtf8(mut v) => {
                     v.push(b);
                     if !matches!(b, b'\x80'..=b'\xff') {
                         // invalid sequence
-                        let res = Some(Input::InvalidByteSequence(core::mem::take(v)));
-                        self.state = State::Normal;
-                        return res;
+                        return Some(Input::InvalidByteSequence(v));
                     } else if let Ok(s) = core::str::from_utf8(&v) {
                         current_line.push_str(s);
-                        self.state = State::Normal;
+                        state = State::Normal;
                     } else {
-                        self.state = State::InUtf8(core::mem::take(v));
+                        state = State::InUtf8(v);
                     }
                 }
-                State::InEscape(v) => {
+                State::InEscape(mut v) => {
                     v.push(b);
                     if v.len() == 2 {
                         if b == b'[' {
                             //debug!("CSI");
-                            //self.state = State::InEscape(v);
+                            state = State::InEscape(v);
                         } else {
                             //debug!("1byte escape");
-                            let res = Some(Input::EscapeSequence(EscapeSequence::from(
-                                core::mem::take(v),
-                            )));
-                            self.state = State::Normal;
-                            return res;
+                            return Some(Input::EscapeSequence(EscapeSequence::from(v)));
                         }
                     } else if matches!(b, b'\x40'..=b'\x7e') {
                         //debug!("end of sequence");
                         // end of sequence
-                        let res = Some(Input::EscapeSequence(EscapeSequence::from(
-                            core::mem::take(v),
-                        )));
-                        self.state = State::Normal;
-                        return res;
+                        return Some(Input::EscapeSequence(EscapeSequence::from(v)));
                     } else {
                         //debug!("continue");
-                        //self.state = State::InEscape(v);
+                        state = State::InEscape(v);
                     }
                 }
             }
@@ -363,7 +356,7 @@ mod tests {
     use std::sync::Mutex;
 
     #[derive(Clone)]
-    struct MutexQueue(Rc<Mutex<VecDeque<VecDeque<u8>>>>);
+    struct MutexQueue(Rc<Mutex<VecDeque<Vec<u8>>>>);
     impl MutexQueue {
         fn new() -> Self {
             Self(Rc::new(Mutex::new(VecDeque::new())))
@@ -374,8 +367,8 @@ mod tests {
         }
     }
     impl InputQueue for MutexQueue {
-        fn pop_byte(&mut self) -> Option<u8> {
-            self.0.lock().unwrap().pop_byte()
+        fn pop(&mut self) -> Option<Vec<u8>> {
+            self.0.lock().unwrap().pop_front()
         }
     }
 

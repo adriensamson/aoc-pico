@@ -22,18 +22,6 @@ use rp_pico::hal::dma::single_buffer::{Config, Transfer};
 use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel};
 use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout, Writer};
 
-fn read_into_vec<D: UartDevice, P: ValidUartPinout<D>>(
-    uart: &Reader<D, P>,
-    max_len: usize,
-) -> Option<Vec<u8>> {
-    let mut vec = Vec::with_capacity(max_len);
-    let cap = vec.spare_capacity_mut();
-    let buf = unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr() as *mut u8, cap.len()) };
-    let len = uart.read_raw(buf).ok()?;
-    unsafe { vec.set_len(vec.len() + len) };
-    Some(vec)
-}
-
 pub struct OutQueue(VecDeque<Vec<u8>>);
 
 impl OutQueue {
@@ -111,7 +99,7 @@ impl<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter
 }
 
 #[derive(Clone)]
-struct MutexInputQueue(Rc<Mutex<RefCell<VecDeque<VecDeque<u8>>>>>);
+struct MutexInputQueue(Rc<Mutex<RefCell<VecDeque<Vec<u8>>>>>);
 
 impl MutexInputQueue {
     fn new() -> Self {
@@ -120,15 +108,34 @@ impl MutexInputQueue {
         )))))
     }
 
-    fn push(&self, data: Vec<u8>) {
-        critical_section::with(|cs| {
-            self.0.borrow_ref_mut(cs).push_back(data.into());
-        })
+    fn read_into<D: UartDevice, P: ValidUartPinout<D>>(
+        &self,
+        uart: &Reader<D, P>,
+    ) -> Result<usize, ()> {
+        let mut vec = critical_section::with(|cs| {
+            let mut q = self.0.borrow_ref_mut(cs);
+            if q.back().is_some_and(|v| v.capacity() - v.len() >= 16) {
+                q.pop_back().unwrap()
+            } else {
+                Vec::with_capacity(64)
+            }
+        });
+        let cap = vec.spare_capacity_mut();
+        let buf =
+            unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr() as *mut u8, cap.len()) };
+        let len = uart.read_raw(buf).unwrap_or_default();
+        unsafe { vec.set_len(vec.len() + len) };
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).push_back(vec));
+        if len > 0 {
+            Ok(len)
+        } else {
+            Err(())
+        }
     }
 }
 
 impl InputQueue for MutexInputQueue {
-    fn pop_byte(&mut self) -> Option<u8> {
-        critical_section::with(|cs| self.0.borrow_ref_mut(cs).pop_byte())
+    fn pop(&mut self) -> Option<Vec<u8>> {
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).pop_front())
     }
 }
