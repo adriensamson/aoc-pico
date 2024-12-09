@@ -2,9 +2,9 @@
 mod app {
     use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
     use crate::multicore::create_multicore_runner;
-    use crate::{read_into_vec, ConsoleUartDmaWriter, OutQueue};
+    use crate::{read_into_vec, ConsoleUartDmaWriter, MutexInputQueue, OutQueue};
     use aoc_pico::aoc::AocRunner;
-    use aoc_pico::shell::{Commands, Console};
+    use aoc_pico::shell::{Commands, Console, InputParser};
     use cortex_m::peripheral::NVIC;
     use defmt::debug;
     use rp_pico::hal::clocks::init_clocks_and_plls;
@@ -30,12 +30,14 @@ mod app {
     #[local]
     struct Local {
         uart_rx: Reader<UART0, UartPinout>,
-        console: Console,
+        console: Console<InputParser<MutexInputQueue>>,
+        console_input: MutexInputQueue,
         console_writer: ConsoleUartDmaWriter<CH0, UART0, UartPinout>,
     }
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
+        debug!("init");
         unsafe { init_heap() };
         install_core0_stack_guard();
 
@@ -77,12 +79,15 @@ mod app {
         let mut commands = Commands::new();
         commands.add("aoc", multicore_runner);
 
-        let console = Console::new(commands);
+        let console_input = MutexInputQueue::new();
+        let console = Console::new(InputParser::new(console_input.clone()), commands);
         uart_rx.enable_rx_interrupt();
 
         let mut dma_chans = pac.DMA.split(&mut pac.RESETS);
         dma_chans.ch0.enable_irq0();
         let console_writer = ConsoleUartDmaWriter::Ready(uart_tx, dma_chans.ch0);
+
+        run_console::spawn().unwrap();
 
         (
             Shared {
@@ -91,35 +96,36 @@ mod app {
             Local {
                 uart_rx,
                 console,
+                console_input,
                 console_writer,
             },
         )
     }
 
-    #[idle]
-    fn idle(_cx: idle::Context) -> ! {
+    #[task(local = [console], shared = [out_queue])]
+    async fn run_console(cx: run_console::Context) {
         debug!("stack pointer: {:x}", read_sp());
-
-        loop {
-            cortex_m::asm::wfi()
-        }
-    }
-
-    #[task(binds = UART0_IRQ, local = [uart_rx, console], shared = [out_queue])]
-    fn uart0_irq(mut cx: uart0_irq::Context) {
-        let uart_rx = cx.local.uart_rx;
         let console = cx.local.console;
-
-        const CHUNK_SIZE: usize = 32;
-
-        while let Some(vec) = read_into_vec(uart_rx, CHUNK_SIZE) {
-            console.push(vec);
+        let mut out_queue = cx.shared.out_queue;
+        loop {
             for out in &mut *console {
-                let need_pend = cx.shared.out_queue.lock(|queue| queue.push(out));
+                let need_pend = out_queue.lock(|queue| queue.push(out));
                 if need_pend {
                     NVIC::pend(interrupt::DMA_IRQ_0);
                 }
             }
+        }
+    }
+
+    #[task(binds = UART0_IRQ, local = [uart_rx, console_input])]
+    fn uart0_irq(cx: uart0_irq::Context) {
+        let uart_rx = cx.local.uart_rx;
+        let console_input = cx.local.console_input;
+
+        const CHUNK_SIZE: usize = 32;
+
+        while let Some(vec) = read_into_vec(uart_rx, CHUNK_SIZE) {
+            console_input.push(vec);
         }
     }
 

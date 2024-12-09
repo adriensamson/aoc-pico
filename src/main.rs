@@ -13,7 +13,11 @@ use defmt_rtt as _;
 use panic_probe as _;
 
 use alloc::collections::VecDeque;
+use alloc::rc::Rc;
 use alloc::vec::Vec;
+use aoc_pico::shell::InputQueue;
+use core::cell::RefCell;
+use critical_section::Mutex;
 use rp_pico::hal::dma::single_buffer::{Config, Transfer};
 use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel};
 use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout, Writer};
@@ -103,5 +107,28 @@ impl<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter
             Self::Transferring(transfer) => transfer.check_irq0(),
             Self::Poisoned => false,
         }
+    }
+}
+
+#[derive(Clone)]
+struct MutexInputQueue(Rc<Mutex<RefCell<VecDeque<VecDeque<u8>>>>>);
+
+impl MutexInputQueue {
+    fn new() -> Self {
+        Self(Rc::new(Mutex::new(RefCell::new(VecDeque::with_capacity(
+            1024,
+        )))))
+    }
+
+    fn push(&self, data: Vec<u8>) {
+        critical_section::with(|cs| {
+            self.0.borrow_ref_mut(cs).push_back(data.into());
+        })
+    }
+}
+
+impl InputQueue for MutexInputQueue {
+    fn pop_byte(&mut self) -> Option<u8> {
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).pop_byte())
     }
 }

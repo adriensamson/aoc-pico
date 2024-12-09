@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+
 #[allow(dead_code)]
 #[derive(Eq, PartialEq, Debug)]
 pub enum Input {
@@ -25,46 +26,48 @@ impl From<Vec<u8>> for EscapeSequence {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct InputParser {
-    buffers: VecDeque<VecDeque<u8>>,
+pub trait InputQueue {
+    fn pop_byte(&mut self) -> Option<u8>;
 }
 
-impl InputParser {
-    pub fn new() -> Self {
+#[derive(Default)]
+pub struct InputParser<Q: InputQueue> {
+    queue: Q,
+    state: State,
+}
+
+impl<Q: InputQueue> InputParser<Q> {
+    pub fn new(queue: Q) -> Self {
         Self {
-            buffers: VecDeque::new(),
+            queue,
+            state: State::default(),
         }
     }
+}
 
-    pub fn push(&mut self, buf: Vec<u8>) {
-        self.buffers.push_back(buf.into())
-    }
-
+impl InputQueue for VecDeque<VecDeque<u8>> {
     fn pop_byte(&mut self) -> Option<u8> {
-        while let Some(buf) = self.buffers.front_mut() {
+        while let Some(buf) = self.front_mut() {
             if let Some(b) = buf.pop_front() {
                 return Some(b);
             } else {
-                self.buffers.pop_front();
+                self.pop_front();
             }
         }
         None
     }
 }
 
-impl Iterator for InputParser {
+impl<Q: InputQueue> Iterator for InputParser<Q> {
     type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut state = State::Normal;
-        let mut current_line = String::new();
+        let mut current_line = String::with_capacity(64);
         loop {
-            let b = match self.pop_byte() {
+            let b = match self.queue.pop_byte() {
                 Some(b) => b,
                 None => {
                     //debug!("no more bytes");
-                    self.push(state.into_bytes());
                     return if current_line.is_empty() {
                         None
                     } else {
@@ -73,55 +76,65 @@ impl Iterator for InputParser {
                 }
             };
             //debug!("state={:?} b={:X}", state, b);
-            match state {
+            match &mut self.state {
                 State::Normal => {
                     match b {
                         b'\n' | b'\r' => {
                             return Some(Input::Line(current_line));
                         }
-                        b'\x1b' => state = State::InEscape(Vec::from([b])),
+                        b'\x1b' => self.state = State::InEscape(Vec::from([b])),
                         b'\x00'..=b'\x1f' | b'\x7f' => {
                             //debug!("control: {:X}", b);
                             return Some(Input::Control(b as char));
                         }
                         b'\x20'..=b'\x7e' => {
                             current_line.push(b as char);
-                            state = State::Normal;
+                            self.state = State::Normal;
                         }
                         b'\x80'..=b'\xff' => {
-                            state = State::InUtf8(Vec::from([b]));
+                            self.state = State::InUtf8(Vec::from([b]));
                         }
                     }
                 }
-                State::InUtf8(mut v) => {
+                State::InUtf8(v) => {
                     v.push(b);
                     if !matches!(b, b'\x80'..=b'\xff') {
                         // invalid sequence
-                        return Some(Input::InvalidByteSequence(v));
+                        let res = Some(Input::InvalidByteSequence(core::mem::take(v)));
+                        self.state = State::Normal;
+                        return res;
                     } else if let Ok(s) = core::str::from_utf8(&v) {
                         current_line.push_str(s);
-                        state = State::Normal;
+                        self.state = State::Normal;
                     } else {
-                        state = State::InUtf8(v);
+                        self.state = State::InUtf8(core::mem::take(v));
                     }
                 }
-                State::InEscape(mut v) => {
+                State::InEscape(v) => {
                     v.push(b);
                     if v.len() == 2 {
                         if b == b'[' {
                             //debug!("CSI");
-                            state = State::InEscape(v);
+                            //self.state = State::InEscape(v);
                         } else {
                             //debug!("1byte escape");
-                            return Some(Input::EscapeSequence(EscapeSequence::from(v)));
+                            let res = Some(Input::EscapeSequence(EscapeSequence::from(
+                                core::mem::take(v),
+                            )));
+                            self.state = State::Normal;
+                            return res;
                         }
                     } else if matches!(b, b'\x40'..=b'\x7e') {
                         //debug!("end of sequence");
                         // end of sequence
-                        return Some(Input::EscapeSequence(EscapeSequence::from(v)));
+                        let res = Some(Input::EscapeSequence(EscapeSequence::from(
+                            core::mem::take(v),
+                        )));
+                        self.state = State::Normal;
+                        return res;
                     } else {
                         //debug!("continue");
-                        state = State::InEscape(v);
+                        //self.state = State::InEscape(v);
                     }
                 }
             }
@@ -129,8 +142,9 @@ impl Iterator for InputParser {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Default)]
 enum State {
+    #[default]
     Normal,
     InUtf8(Vec<u8>),
     InEscape(Vec<u8>),
@@ -209,8 +223,8 @@ impl Commands {
     }
 }
 
-pub struct Console {
-    parser: InputParser,
+pub struct Console<I: Iterator<Item = Input>> {
+    input: I,
     commands: Commands,
     state: ConsoleState,
 }
@@ -236,17 +250,13 @@ impl Default for ConsoleState {
     }
 }
 
-impl Console {
-    pub fn new(commands: Commands) -> Self {
+impl<I: Iterator<Item = Input>> Console<I> {
+    pub fn new(input: I, commands: Commands) -> Self {
         Self {
-            parser: InputParser::new(),
+            input,
             commands,
             state: Default::default(),
         }
-    }
-
-    pub fn push(&mut self, buf: Vec<u8>) {
-        self.parser.push(buf);
     }
 
     fn eol(&self) -> &str {
@@ -259,7 +269,7 @@ impl Console {
     }
 }
 
-impl Iterator for Console {
+impl<I: Iterator<Item = Input>> Iterator for Console<I> {
     type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -297,7 +307,7 @@ impl Iterator for Console {
                 input: input_lines,
                 current_line,
                 ..
-            } => match self.parser.next()? {
+            } => match self.input.next()? {
                 Input::Line(s) => {
                     current_line.push_str(&s);
                     input_lines.push(core::mem::take(current_line));
@@ -317,7 +327,7 @@ impl Iterator for Console {
                 }
                 _ => Some(Vec::new()),
             },
-            ConsoleState::Prompt(prompt) => match self.parser.next()? {
+            ConsoleState::Prompt(prompt) => match self.input.next()? {
                 Input::Line(s) => {
                     prompt.push_str(&s);
                     if let Some(prompt) = prompt.strip_suffix('<') {
@@ -344,49 +354,78 @@ impl Iterator for Console {
     }
 }
 
-#[test]
-fn test_input_parser() {
-    let mut parser = InputParser::new();
-    parser.push(b"abc".to_vec());
-    assert_eq!(parser.next(), Some(Input::IncompleteLine("abc".into())));
-    assert_eq!(parser.next(), None);
-    parser.push(b"\x1b".to_vec());
-    assert_eq!(parser.next(), None);
-    parser.push(b"[m".to_vec());
-    assert_eq!(
-        parser.next(),
-        Some(Input::EscapeSequence(EscapeSequence::Unknown(
-            b"\x1b[m".into()
-        )))
-    );
-    assert_eq!(parser.next(), None);
-    parser.push(b"pppp\r".to_vec());
-    assert_eq!(parser.next(), Some(Input::Line("pppp".into())));
-    assert_eq!(parser.next(), None);
-    parser.push(b"\x04".to_vec());
-    assert_eq!(parser.next(), Some(Input::Control('\x04')));
-    assert_eq!(parser.next(), None);
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::rc::Rc;
+    use std::collections::VecDeque;
+    use std::prelude::rust_2015::Vec;
+    use std::sync::Mutex;
 
-#[test]
-fn test_console() {
-    let mut console = Console::new(Commands::default());
-    console.push(b"\r".to_vec());
-    assert_eq!(console.next(), Some(b"\r\n> ".into()));
-    assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
-    assert_eq!(console.next(), None);
-    console.push(b"abc\r".to_vec());
-    assert_eq!(console.next(), Some(b"abc\r\n> ".into()));
-    assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
-    assert_eq!(console.next(), None);
-    console.push(b"abc <\r".to_vec());
-    assert_eq!(console.next(), Some(b"abc <\r\n< ".into()));
-    assert_eq!(console.next(), None);
-    console.push(b"plop\r".to_vec());
-    assert_eq!(console.next(), Some(b"plop\r\n< ".into()));
-    assert_eq!(console.next(), None);
-    console.push(b"\x04".to_vec());
-    assert_eq!(console.next(), Some(b"\r\n> ".into()));
-    assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
-    assert_eq!(console.next(), None);
+    #[derive(Clone)]
+    struct MutexQueue(Rc<Mutex<VecDeque<VecDeque<u8>>>>);
+    impl MutexQueue {
+        fn new() -> Self {
+            Self(Rc::new(Mutex::new(VecDeque::new())))
+        }
+
+        fn push(&self, input: Vec<u8>) {
+            self.0.lock().unwrap().push_back(input.into());
+        }
+    }
+    impl InputQueue for MutexQueue {
+        fn pop_byte(&mut self) -> Option<u8> {
+            self.0.lock().unwrap().pop_byte()
+        }
+    }
+
+    #[test]
+    fn test_input_parser() {
+        let queue = MutexQueue::new();
+        let mut parser = InputParser::new(queue.clone());
+        queue.push(b"abc".to_vec());
+        assert_eq!(parser.next(), Some(Input::IncompleteLine("abc".into())));
+        assert_eq!(parser.next(), None);
+        queue.push(b"\x1b".to_vec());
+        assert_eq!(parser.next(), None);
+        queue.push(b"[m".to_vec());
+        assert_eq!(
+            parser.next(),
+            Some(Input::EscapeSequence(EscapeSequence::Unknown(
+                b"\x1b[m".into()
+            )))
+        );
+        assert_eq!(parser.next(), None);
+        queue.push(b"pppp\r".to_vec());
+        assert_eq!(parser.next(), Some(Input::Line("pppp".into())));
+        assert_eq!(parser.next(), None);
+        queue.push(b"\x04".to_vec());
+        assert_eq!(parser.next(), Some(Input::Control('\x04')));
+        assert_eq!(parser.next(), None);
+    }
+
+    #[test]
+    fn test_console() {
+        let queue = MutexQueue::new();
+
+        let mut console = Console::new(InputParser::new(queue.clone()), Commands::default());
+        queue.push(b"\r".to_vec());
+        assert_eq!(console.next(), Some(b"\r\n> ".into()));
+        assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
+        assert_eq!(console.next(), None);
+        queue.push(b"abc\r".to_vec());
+        assert_eq!(console.next(), Some(b"abc\r\n> ".into()));
+        assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
+        assert_eq!(console.next(), None);
+        queue.push(b"abc <\r".to_vec());
+        assert_eq!(console.next(), Some(b"abc <\r\n< ".into()));
+        assert_eq!(console.next(), None);
+        queue.push(b"plop\r".to_vec());
+        assert_eq!(console.next(), Some(b"plop\r\n< ".into()));
+        assert_eq!(console.next(), None);
+        queue.push(b"\x04".to_vec());
+        assert_eq!(console.next(), Some(b"\r\n> ".into()));
+        assert_eq!(console.next(), Some(b"unknown command\r\n$ ".into()));
+        assert_eq!(console.next(), None);
+    }
 }
