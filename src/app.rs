@@ -1,18 +1,21 @@
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
+    use crate::app::app::shared_resources::console_reader_that_needs_to_be_locked;
     use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
     use crate::multicore::create_multicore_runner;
-    use crate::{ConsoleUartDmaWriter, MutexInputQueue, OutQueue};
+    use crate::{ConsoleDmaReader, ConsoleUartDmaWriter, MutexInputQueue, OutQueue};
     use aoc_pico::aoc::AocRunner;
     use aoc_pico::shell::{Commands, Console, InputParser};
     use cortex_m::peripheral::NVIC;
+    use cortex_m::singleton;
     use defmt::debug;
     use rp_pico::hal::clocks::init_clocks_and_plls;
-    use rp_pico::hal::dma::{DMAExt, SingleChannel, CH0};
+    use rp_pico::hal::dma::{DMAExt, SingleChannel, CH0, CH1};
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
     use rp_pico::hal::gpio::{FunctionUart, PullDown};
-    use rp_pico::hal::uart::{Reader, UartConfig, UartPeripheral};
-    use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Watchdog};
+    use rp_pico::hal::timer::Alarm0;
+    use rp_pico::hal::uart::{UartConfig, UartPeripheral};
+    use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Timer, Watchdog};
     use rp_pico::pac::interrupt;
     use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
@@ -25,13 +28,12 @@ mod app {
     #[shared]
     struct Shared {
         out_queue: OutQueue,
+        console_reader: ConsoleDmaReader<CH1, UART0, UartPinout, Alarm0>,
     }
 
     #[local]
     struct Local {
-        uart_rx: Reader<UART0, UartPinout>,
-        console: Console<InputParser<MutexInputQueue>>,
-        console_input: MutexInputQueue,
+        console: Console<InputParser<&'static MutexInputQueue>>,
         console_writer: ConsoleUartDmaWriter<CH0, UART0, UartPinout>,
     }
 
@@ -55,6 +57,7 @@ mod app {
         .unwrap();
 
         let sio = Sio::new(pac.SIO);
+        let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
         let pins = Pins::new(
             pac.IO_BANK0,
@@ -79,24 +82,30 @@ mod app {
         let mut commands = Commands::new();
         commands.add("aoc", multicore_runner);
 
-        let console_input = MutexInputQueue::new();
-        let console = Console::new(InputParser::new(console_input.clone()), commands);
+        let console_input = singleton!(: MutexInputQueue = MutexInputQueue::new()).unwrap();
+        let console = Console::new(InputParser::new(&*console_input), commands);
         uart_rx.enable_rx_interrupt();
 
         let mut dma_chans = pac.DMA.split(&mut pac.RESETS);
         dma_chans.ch0.enable_irq0();
         let console_writer = ConsoleUartDmaWriter::Ready(uart_tx, dma_chans.ch0);
+        dma_chans.ch1.enable_irq1();
+        let mut console_reader = ConsoleDmaReader::new(
+            &*console_input,
+            uart_rx,
+            dma_chans.ch1,
+            timer.alarm_0().unwrap(),
+        );
 
         run_console::spawn().unwrap();
 
         (
             Shared {
                 out_queue: OutQueue::new(),
+                console_reader,
             },
             Local {
-                uart_rx,
                 console,
-                console_input,
                 console_writer,
             },
         )
@@ -117,14 +126,6 @@ mod app {
         }
     }
 
-    #[task(binds = UART0_IRQ, local = [uart_rx, console_input])]
-    fn uart0_irq(cx: uart0_irq::Context) {
-        let uart_rx = cx.local.uart_rx;
-        let console_input = cx.local.console_input;
-
-        while let Ok(_) = console_input.read_into(uart_rx) {}
-    }
-
     #[task(binds = DMA_IRQ_0, local = [console_writer], shared = [out_queue])]
     fn dma_irq0(mut cx: dma_irq0::Context) {
         let console_writer = cx.local.console_writer;
@@ -134,5 +135,32 @@ mod app {
         } else {
             console_writer.flush();
         }
+    }
+
+    #[task(binds = DMA_IRQ_1, shared = [console_reader])]
+    fn dma_irq1(mut cx: dma_irq1::Context) {
+        cx.shared.console_reader.lock(|console_reader| {
+            console_reader.check_irq1();
+            console_reader.on_finish();
+        });
+    }
+
+    #[task(binds = UART0_IRQ, shared = [console_reader])]
+    fn uart0(mut cx: uart0::Context) {
+        cx.shared.console_reader.lock(|console_reader| {
+            if let Ok(len) = console_reader.read_into() {
+                if len >= 16 {
+                    debug!("len: {} -> start", len);
+                    console_reader.start().unwrap();
+                }
+            }
+        });
+    }
+
+    #[task(binds = TIMER_IRQ_0, shared = [console_reader])]
+    fn timer0(mut cx: timer0::Context) {
+        cx.shared
+            .console_reader
+            .lock(|console_reader| console_reader.on_alarm());
     }
 }

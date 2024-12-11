@@ -9,10 +9,14 @@ rtic = { version = "2.1.1", features = ["thumbv6-backend"] }
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
 critical-section = "1.2.0"
+portable-atomic = { version = "1.10.0", features = ["critical-section"] }
 defmt = "0.3.8"
 defmt-rtt = "0.4.1"
 panic-probe = { version = "0.3.2", features = ["print-defmt"] }
 embedded-alloc = "0.6.0"
+
+[patch.crates-io]
+rp2040-hal = { git = "https://github.com/rp-rs/rp-hal.git" }
 
 # cargo build/run
 [profile.dev]
