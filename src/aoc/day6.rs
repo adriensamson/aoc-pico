@@ -3,7 +3,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Ord, PartialOrd)]
 pub enum Direction {
     Top,
     Right,
@@ -22,17 +22,134 @@ impl Direction {
     }
 }
 
+trait Map {
+    fn height(&self) -> usize;
+    fn width(&self) -> usize;
+    fn is_wall(&self, x: usize, y: usize) -> bool;
+}
+
 pub struct AocDay6 {
     map: Vec<Vec<bool>>,
     start: (usize, usize, Direction),
 }
 
-impl AocDay6 {
+impl Map for AocDay6 {
+    fn height(&self) -> usize {
+        self.map.len()
+    }
     fn width(&self) -> usize {
         self.map[0].len()
     }
+    fn is_wall(&self, x: usize, y: usize) -> bool {
+        self.map[y][x]
+    }
+}
+
+impl AocDay6 {
+    fn start_pos(&self) -> Position<Self> {
+        Position {
+            map: self,
+            x: self.start.0,
+            y: self.start.1,
+            direction: self.start.2,
+        }
+    }
+
+    fn path(&self) -> BTreeSet<(usize, usize)> {
+        let mut visited = BTreeSet::new();
+        let mut pos = self.start_pos();
+        visited.insert((pos.x, pos.y));
+        while let Some(next) = pos.next() {
+            visited.insert((next.x, next.y));
+            pos = next;
+        }
+        visited
+    }
+}
+
+#[derive(Clone)]
+struct Position<'a, M> {
+    map: &'a M,
+    x: usize,
+    y: usize,
+    direction: Direction,
+}
+
+impl<'a, M: Map> Position<'a, M> {
+    fn next(&self) -> Option<Self> {
+        let (x, y) = match self.direction {
+            Direction::Top => {
+                if self.y == 0 {
+                    None
+                } else {
+                    Some((self.x, self.y - 1))
+                }
+            }
+            Direction::Right => {
+                if self.x == self.map.width() - 1 {
+                    None
+                } else {
+                    Some((self.x + 1, self.y))
+                }
+            }
+            Direction::Bottom => {
+                if self.y == self.map.height() - 1 {
+                    None
+                } else {
+                    Some((self.x, self.y + 1))
+                }
+            }
+            Direction::Left => {
+                if self.x == 0 {
+                    None
+                } else {
+                    Some((self.x - 1, self.y))
+                }
+            }
+        }?;
+        if self.map.is_wall(x, y) {
+            Some(Position { map: self.map, x: self.x, y: self.y, direction: self.direction.turn_right() })
+        } else {
+            Some(Position { map: self.map, x, y, direction: self.direction })
+        }
+    }
+}
+
+struct OneMoreWall<'a, M> {
+    map: &'a M,
+    wall: (usize, usize)
+}
+
+impl<'a> OneMoreWall<'a, AocDay6> {
+    fn new(map: &'a AocDay6, wall: (usize, usize)) -> Self {
+        Self { map, wall }
+    }
+
+    fn start_pos(&self) -> Position<Self> {
+        Position {
+            map: self,
+            x: self.map.start.0,
+            y: self.map.start.1,
+            direction: self.map.start.2,
+        }
+    }
+}
+
+impl<'a, M: Map> Map for OneMoreWall<'a, M> {
     fn height(&self) -> usize {
-        self.map.len()
+        self.map.height()
+    }
+
+    fn width(&self) -> usize {
+        self.map.width()
+    }
+
+    fn is_wall(&self, x: usize, y: usize) -> bool {
+        if self.wall == (x, y) {
+            true
+        } else {
+            self.map.is_wall(x, y)
+        }
     }
 }
 
@@ -71,44 +188,30 @@ impl AocDay for AocDay6 {
     }
 
     fn part1(&self) -> String {
-        let mut visited = BTreeSet::new();
-        let mut pos = self.start;
-        visited.insert((pos.0, pos.1));
-        loop {
-            let next = match pos.2 {
-                Direction::Top => {
-                    if pos.1 == 0 {
-                        break;
-                    }
-                    (pos.0, pos.1 - 1)
-                }
-                Direction::Right => {
-                    if pos.0 == self.width() - 1 {
-                        break;
-                    }
-                    (pos.0 + 1, pos.1)
-                }
-                Direction::Bottom => {
-                    if pos.1 == self.height() - 1 {
-                        break;
-                    }
-                    (pos.0, pos.1 + 1)
-                }
-                Direction::Left => {
-                    if pos.0 == 0 {
-                        break;
-                    }
-                    (pos.0 - 1, pos.1)
-                }
-            };
-            if self.map[next.1][next.0] {
-                pos.2 = pos.2.turn_right();
-                continue;
-            }
-            visited.insert(next);
-            pos = (next.0, next.1, pos.2)
-        }
+        let visited = self.path();
         visited.len().to_string()
+    }
+
+    fn part2(&self) -> String {
+        self.path()
+            .into_iter()
+            .filter(|(x, y)| {
+                if *x == self.start.0 && *y == self.start.1 {
+                    return false;
+                }
+                let onemorewall = OneMoreWall::new(self, (*x, *y));
+                let mut visited = BTreeSet::new();
+                let mut pos = onemorewall.start_pos();
+                visited.insert((pos.x, pos.y, pos.direction));
+                while let Some(next) = pos.next() {
+                    if !visited.insert((next.x, next.y, next.direction)) {
+                        return true;
+                    }
+                    pos = next;
+                }
+                false
+
+            }).count().to_string()
     }
 }
 
@@ -129,6 +232,7 @@ mod test {
     #[test]
     fn test() {
         let day = AocDay6::new(INPUT.lines().map(ToString::to_string).collect());
-        assert_eq!(day.part1(), "41")
+        assert_eq!(day.part1(), "41");
+        assert_eq!(day.part2(), "6");
     }
 }
