@@ -1,6 +1,6 @@
 #[rtic::app(device = rp_pico::pac, peripherals = true)]
 mod app {
-    use crate::app::app::shared_resources::console_reader_that_needs_to_be_locked;
+    use crate::dma::DoubleChannelReader;
     use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
     use crate::multicore::create_multicore_runner;
     use crate::{ConsoleDmaReader, ConsoleUartDmaWriter, MutexInputQueue, OutQueue};
@@ -10,7 +10,7 @@ mod app {
     use cortex_m::singleton;
     use defmt::debug;
     use rp_pico::hal::clocks::init_clocks_and_plls;
-    use rp_pico::hal::dma::{DMAExt, SingleChannel, CH0, CH1};
+    use rp_pico::hal::dma::{DMAExt, SingleChannel, CH0, CH1, CH2};
     use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
     use rp_pico::hal::gpio::{FunctionUart, PullDown};
     use rp_pico::hal::timer::Alarm0;
@@ -28,7 +28,7 @@ mod app {
     #[shared]
     struct Shared {
         out_queue: OutQueue,
-        console_reader: ConsoleDmaReader<CH1, UART0, UartPinout, Alarm0>,
+        console_reader: ConsoleDmaReader<CH1, CH2, Alarm0, UART0, UartPinout>,
     }
 
     #[local]
@@ -89,13 +89,16 @@ mod app {
         let mut dma_chans = pac.DMA.split(&mut pac.RESETS);
         dma_chans.ch0.enable_irq0();
         let console_writer = ConsoleUartDmaWriter::Ready(uart_tx, dma_chans.ch0);
+
         dma_chans.ch1.enable_irq1();
-        let mut console_reader = ConsoleDmaReader::new(
-            &*console_input,
-            uart_rx,
+        dma_chans.ch2.enable_irq1();
+        let double_dma = DoubleChannelReader::new(
             dma_chans.ch1,
+            dma_chans.ch2,
             timer.alarm_0().unwrap(),
+            uart_rx,
         );
+        let console_reader = ConsoleDmaReader::new(&*console_input, double_dma);
 
         run_console::spawn().unwrap();
 
@@ -140,8 +143,8 @@ mod app {
     #[task(binds = DMA_IRQ_1, shared = [console_reader])]
     fn dma_irq1(mut cx: dma_irq1::Context) {
         cx.shared.console_reader.lock(|console_reader| {
-            console_reader.check_irq1();
-            console_reader.on_finish();
+            let _ = console_reader.dma.check_irq1();
+            let _ = console_reader.on_dma_irq();
         });
     }
 
@@ -150,7 +153,6 @@ mod app {
         cx.shared.console_reader.lock(|console_reader| {
             if let Ok(len) = console_reader.read_into() {
                 if len >= 16 {
-                    debug!("len: {} -> start", len);
                     console_reader.start().unwrap();
                 }
             }
@@ -159,7 +161,8 @@ mod app {
 
     #[task(binds = TIMER_IRQ_0, shared = [console_reader])]
     fn timer0(mut cx: timer0::Context) {
-        cx.shared
+        let _ = cx
+            .shared
             .console_reader
             .lock(|console_reader| console_reader.on_alarm());
     }

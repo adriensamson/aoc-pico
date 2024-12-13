@@ -16,7 +16,7 @@ panic-probe = { version = "0.3.2", features = ["print-defmt"] }
 embedded-alloc = "0.6.0"
 
 [patch.crates-io]
-rp2040-hal = { git = "https://github.com/rp-rs/rp-hal.git" }
+rp2040-hal = { path = "../rp-hal/rp2040-hal" }
 
 # cargo build/run
 [profile.dev]

@@ -4,6 +4,7 @@
 extern crate alloc;
 
 mod app;
+mod dma;
 mod memory;
 mod multicore;
 
@@ -12,18 +13,16 @@ use defmt_rtt as _;
 #[allow(unused_imports)]
 use panic_probe as _;
 
+use crate::dma::DoubleChannelReader;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use aoc_pico::shell::InputQueue;
 use core::cell::RefCell;
 use critical_section::Mutex;
-use defmt::debug;
 use rp_pico::hal::dma::single_buffer::{Config, Transfer};
-use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel, WriteTarget};
-use rp_pico::hal::fugit::ExtU32;
+use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel};
 use rp_pico::hal::timer::Alarm;
 use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout, Writer};
-use rp_pico::pac;
 
 pub struct OutQueue(VecDeque<Vec<u8>>);
 
@@ -56,25 +55,6 @@ unsafe impl ReadTarget for VecReadTarget {
     }
 
     fn rx_increment(&self) -> bool {
-        true
-    }
-}
-
-struct VecCapWriteTarget(Vec<u8>);
-
-unsafe impl WriteTarget for VecCapWriteTarget {
-    type TransmittedWord = u8;
-
-    fn tx_treq() -> Option<u8> {
-        None
-    }
-
-    fn tx_address_count(&mut self) -> (u32, u32) {
-        let spare = self.0.spare_capacity_mut();
-        (spare.as_ptr() as u32, spare.len() as u32)
-    }
-
-    fn tx_increment(&self) -> bool {
         true
     }
 }
@@ -120,114 +100,46 @@ impl<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter
     }
 }
 
-pub struct ConsoleDmaReader<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>, A: Alarm> {
+pub struct ConsoleDmaReader<
+    CH1: ChannelIndex,
+    CH2: ChannelIndex,
+    A: Alarm,
+    U: UartDevice,
+    P: ValidUartPinout<U>,
+> {
     queue: &'static MutexInputQueue,
-    reader: Option<Reader<U, P>>,
-    channel: Option<Channel<D>>,
-    transfer: Option<Transfer<Channel<D>, Reader<U, P>, VecCapWriteTarget>>,
-    alarm: A,
-    next_vec: Vec<u8>,
+    dma: DoubleChannelReader<CH1, CH2, A, Reader<U, P>, 512>,
 }
 
-impl<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>, A: Alarm> ConsoleDmaReader<D, U, P, A> {
-    const BYTES: usize = 512;
-
+impl<CH1: ChannelIndex, CH2: ChannelIndex, A: Alarm, U: UartDevice, P: ValidUartPinout<U>>
+    ConsoleDmaReader<CH1, CH2, A, U, P>
+{
     fn new(
         queue: &'static MutexInputQueue,
-        reader: Reader<U, P>,
-        channel: Channel<D>,
-        alarm: A,
+        dma: DoubleChannelReader<CH1, CH2, A, Reader<U, P>, 512>,
     ) -> Self {
-        Self {
-            queue,
-            reader: Some(reader),
-            channel: Some(channel),
-            transfer: None,
-            alarm,
-            next_vec: Vec::with_capacity(Self::BYTES),
-        }
+        Self { queue, dma }
     }
 
     fn read_into(&mut self) -> Result<usize, ()> {
-        if let Some(reader) = &mut self.reader {
-            self.queue.read_into(reader)
-        } else {
-            Err(())
-        }
+        let reader = self.dma.reader().ok_or(())?;
+        self.queue.read_into(reader)
     }
 
     fn start(&mut self) -> Result<(), ()> {
-        if let (Some(reader), Some(ch)) = (self.reader.take(), self.channel.take()) {
-            self.transfer = Some(
-                Config::new(
-                    ch,
-                    reader,
-                    VecCapWriteTarget(core::mem::take(&mut self.next_vec)),
-                )
-                .start(),
-            );
-            self.alarm.schedule(100.millis()).unwrap();
-            self.alarm.enable_interrupt();
-            self.next_vec = Vec::with_capacity(Self::BYTES);
-            Ok(())
-        } else {
-            Err(())
-        }
+        self.dma.start()
     }
 
-    fn is_done(&self) -> bool {
-        match &self.transfer {
-            None => true,
-            Some(transfer) => transfer.is_done(),
-        }
+    fn on_dma_irq(&mut self) -> Result<(), ()> {
+        let vec = self.dma.on_dma_irq()?;
+        self.queue.push(vec);
+        Ok(())
     }
 
-    fn on_finish(&mut self) {
-        if !self.is_done() {
-            return;
-        }
-        if let Some(transfer) = self.transfer.take() {
-            self.alarm.disable_interrupt();
-            let (ch, reader, writer) = transfer.wait();
-            self.reader = Some(reader);
-            self.channel = Some(ch);
-            self.start().unwrap();
-
-            let mut vec = writer.0;
-            unsafe {
-                vec.set_len(Self::BYTES);
-            };
-            self.queue.push(vec);
-        }
-    }
-
-    fn check_irq1(&mut self) -> bool {
-        match &mut self.transfer {
-            Some(transfer) => transfer.check_irq1(),
-            None => match &mut self.channel {
-                None => false,
-                Some(ch) => ch.check_irq1(),
-            },
-        }
-    }
-
-    fn on_alarm(&mut self) {
-        self.alarm.disable_interrupt();
-        if let Some(transfer) = self.transfer.take() {
-            let trans_count = unsafe { pac::DMA::steal() }
-                .ch(D::id() as usize)
-                .ch_trans_count()
-                .read()
-                .bits();
-            let (ch, reader, writer) = transfer.abort();
-            let mut vec = writer.0;
-            unsafe { vec.set_len(Self::BYTES - trans_count as usize) };
-            vec.shrink_to_fit();
-            debug!("set len from alarm : {}", vec.len());
-            self.queue.push(vec);
-            self.reader = Some(reader);
-            self.channel = Some(ch);
-        }
+    fn on_alarm(&mut self) -> Result<(), ()> {
+        let vec = self.dma.on_alarm_irq()?;
+        self.queue.push(vec);
+        Ok(())
     }
 }
 

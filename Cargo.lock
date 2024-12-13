@@ -492,12 +492,10 @@ dependencies = [
 [[package]]
 name = "rp-binary-info"
 version = "0.1.0"
-source = "git+https://github.com/rp-rs/rp-hal.git#e78fa4c0661910f71e0eb5f4a370f20b1ed2cacb"
 
 [[package]]
 name = "rp-hal-common"
 version = "0.1.0"
-source = "git+https://github.com/rp-rs/rp-hal.git#e78fa4c0661910f71e0eb5f4a370f20b1ed2cacb"
 dependencies = [
  "fugit",
 ]
@@ -527,7 +525,6 @@ dependencies = [
 [[package]]
 name = "rp2040-hal"
 version = "0.10.0"
-source = "git+https://github.com/rp-rs/rp-hal.git#e78fa4c0661910f71e0eb5f4a370f20b1ed2cacb"
 dependencies = [
  "bitfield 0.14.0",
  "cortex-m",
@@ -557,7 +554,6 @@ dependencies = [
 [[package]]
 name = "rp2040-hal-macros"
 version = "0.1.0"
-source = "git+https://github.com/rp-rs/rp-hal.git#e78fa4c0661910f71e0eb5f4a370f20b1ed2cacb"
 dependencies = [
  "proc-macro2",
  "quote",
