@@ -16,6 +16,7 @@ mod app {
     use rp_pico::hal::timer::Alarm0;
     use rp_pico::hal::uart::{UartConfig, UartPeripheral};
     use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Timer, Watchdog};
+    use rp_pico::hal::sio::spinlock_reset;
     use rp_pico::pac::interrupt;
     use rp_pico::pac::UART0;
     use rp_pico::XOSC_CRYSTAL_FREQ;
@@ -39,6 +40,7 @@ mod app {
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
+        unsafe { spinlock_reset() };
         debug!("init");
         unsafe { init_heap() };
         install_core0_stack_guard();
