@@ -108,16 +108,26 @@ impl<'a, M: Map> Position<'a, M> {
             }
         }?;
         if self.map.is_wall(x, y) {
-            Some(Position { map: self.map, x: self.x, y: self.y, direction: self.direction.turn_right() })
+            Some(Position {
+                map: self.map,
+                x: self.x,
+                y: self.y,
+                direction: self.direction.turn_right(),
+            })
         } else {
-            Some(Position { map: self.map, x, y, direction: self.direction })
+            Some(Position {
+                map: self.map,
+                x,
+                y,
+                direction: self.direction,
+            })
         }
     }
 }
 
 struct OneMoreWall<'a, M> {
     map: &'a M,
-    wall: (usize, usize)
+    wall: (usize, usize),
 }
 
 impl<'a> OneMoreWall<'a, AocDay6> {
@@ -125,12 +135,12 @@ impl<'a> OneMoreWall<'a, AocDay6> {
         Self { map, wall }
     }
 
-    fn start_pos(&self) -> Position<Self> {
+    fn start_at(&self, x: usize, y: usize, direction: Direction) -> Position<Self> {
         Position {
             map: self,
-            x: self.map.start.0,
-            y: self.map.start.1,
-            direction: self.map.start.2,
+            x,
+            y,
+            direction,
         }
     }
 }
@@ -193,25 +203,34 @@ impl AocDay for AocDay6 {
     }
 
     fn part2(&self) -> String {
-        self.path()
-            .into_iter()
-            .filter(|(x, y)| {
-                if *x == self.start.0 && *y == self.start.1 {
-                    return false;
-                }
-                let onemorewall = OneMoreWall::new(self, (*x, *y));
+        let mut count = 0;
+        let mut path = BTreeSet::new();
+        let mut pos = self.start_pos();
+        path.insert((pos.x, pos.y, pos.direction));
+        while let Some(next) = pos.next() {
+            if path
+                .range((next.x, next.y, Direction::Top)..=(next.x, next.y, Direction::Left))
+                .count()
+                == 0
+            {
+                let onemorewall = OneMoreWall::new(self, (next.x, next.y));
                 let mut visited = BTreeSet::new();
-                let mut pos = onemorewall.start_pos();
-                visited.insert((pos.x, pos.y, pos.direction));
-                while let Some(next) = pos.next() {
-                    if !visited.insert((next.x, next.y, next.direction)) {
-                        return true;
+                let mut pos2 = onemorewall.start_at(pos.x, pos.y, pos.direction);
+                while let Some(next2) = pos2.next() {
+                    if path.contains(&(next2.x, next2.y, next2.direction))
+                        || visited.contains(&(next2.x, next2.y, next2.direction))
+                    {
+                        count += 1;
+                        break;
                     }
-                    pos = next;
+                    visited.insert((next2.x, next2.y, next2.direction));
+                    pos2 = next2;
                 }
-                false
-
-            }).count().to_string()
+            }
+            path.insert((next.x, next.y, next.direction));
+            pos = next;
+        }
+        count.to_string()
     }
 }
 
