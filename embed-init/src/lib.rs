@@ -1,3 +1,5 @@
+#![no_std]
+
 use core::cell::{RefCell, UnsafeCell};
 use core::mem::MaybeUninit;
 use critical_section::Mutex;
@@ -79,10 +81,10 @@ macro_rules! give_away_cell {
         #[allow(non_snake_case)]
         mod $token {
             pub(crate) struct Token;
-            pub(crate) static CELL: $crate::static_cell::GiveAwayCell<Token> =
-                $crate::static_cell::GiveAwayCell::new();
+            pub(crate) static CELL: ::embed_init::GiveAwayCell<Token> =
+                ::embed_init::GiveAwayCell::new();
         }
-        impl $crate::static_cell::CellToken for $token::Token {
+        impl ::embed_init::CellToken for $token::Token {
             type Inner = $ty;
         }
     };
@@ -94,10 +96,10 @@ macro_rules! shared_cell {
         #[allow(non_snake_case)]
         mod $token {
             pub(crate) struct Token;
-            pub(crate) static CELL: $crate::static_cell::SharedCell<Token> =
-                $crate::static_cell::SharedCell::new();
+            pub(crate) static CELL: ::embed_init::SharedCell<Token> =
+                ::embed_init::SharedCell::new();
         }
-        impl $crate::static_cell::CellToken for $token::Token {
+        impl ::embed_init::CellToken for $token::Token {
             type Inner = $ty;
         }
     };
@@ -107,7 +109,7 @@ macro_rules! shared_cell {
 macro_rules! give {
     ($token:ident = $value:expr) => {{
         #[allow(non_local_definitions)]
-        impl $crate::static_cell::Given for $token::Token {}
+        impl ::embed_init::Given for $token::Token {}
         $token::CELL.give($value)
     }};
 }
@@ -116,7 +118,7 @@ macro_rules! give {
 macro_rules! take {
     ($token:ident) => {{
         #[allow(non_local_definitions)]
-        impl $crate::static_cell::Taken for $token::Token {}
+        impl ::embed_init::Taken for $token::Token {}
         $token::CELL.take()
     }};
 }
