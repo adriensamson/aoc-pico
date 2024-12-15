@@ -75,35 +75,8 @@ impl<CT: Given> SharedCell<CT> {
     }
 }
 
-#[macro_export]
-macro_rules! give_away_cell {
-    ($token:ident : $ty:ty) => {
-        #[allow(non_snake_case)]
-        mod $token {
-            pub(crate) struct Token;
-            pub(crate) static CELL: ::embed_init::GiveAwayCell<Token> =
-                ::embed_init::GiveAwayCell::new();
-        }
-        impl ::embed_init::CellToken for $token::Token {
-            type Inner = $ty;
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! shared_cell {
-    ($token:ident : $ty:ty) => {
-        #[allow(non_snake_case)]
-        mod $token {
-            pub(crate) struct Token;
-            pub(crate) static CELL: ::embed_init::SharedCell<Token> =
-                ::embed_init::SharedCell::new();
-        }
-        impl ::embed_init::CellToken for $token::Token {
-            type Inner = $ty;
-        }
-    };
-}
+pub use embed_init_macros::give_away_cell;
+pub use embed_init_macros::shared_cell;
 
 #[macro_export]
 macro_rules! give {

@@ -180,6 +180,15 @@ name = "embed-init"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "embed-init-macros",
+]
+
+[[package]]
+name = "embed-init-macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.90",
 ]
 
 [[package]]

@@ -24,10 +24,15 @@ type UartPinout = (
     Pin<Gpio1, FunctionUart, PullDown>,
 );
 
-shared_cell!(out_queue: OutQueue);
-shared_cell!(console_reader: ConsoleDmaReader<CH1, CH2, Alarm0, UART0, UartPinout>);
-give_away_cell!(console: Console<InputParser<&'static MutexInputQueue>>);
-give_away_cell!(console_writer: ConsoleUartDmaWriter<CH0, UART0, UartPinout>);
+#[shared_cell]
+static out_queue: OutQueue;
+#[shared_cell]
+static console_reader: ConsoleDmaReader<CH1, CH2, Alarm0, UART0, UartPinout>;
+
+#[give_away_cell]
+static console: Console<InputParser<&'static MutexInputQueue>>;
+#[give_away_cell]
+static console_writer: ConsoleUartDmaWriter<CH0, UART0, UartPinout>;
 
 #[cortex_m_rt::entry]
 fn entry() -> ! {
