@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use crate::dma::DoubleChannelReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
@@ -18,6 +19,9 @@ use rp_pico::pac::{interrupt, Interrupt};
 use rp_pico::pac::UART0;
 use rp_pico::XOSC_CRYSTAL_FREQ;
 use embed_init::{borrow, give, give_away_cell, shared_cell, take};
+use usb_device::{prelude::*, class_prelude::*};
+use usbd_serial::embedded_io::Write;
+use usbd_serial::SerialPort;
 
 type UartPinout = (
     Pin<Gpio0, FunctionUart, PullDown>,
@@ -34,7 +38,14 @@ static console: Console<InputParser<&'static MutexInputQueue>>;
 #[give_away_cell]
 static console_writer: ConsoleUartDmaWriter<CH0, UART0, UartPinout>;
 
-#[cortex_m_rt::entry]
+#[give_away_cell]
+static usb_serial: SerialPort<'static, rp_pico::hal::usb::UsbBus>;
+#[give_away_cell]
+static usb_dev: UsbDevice<'static, rp_pico::hal::usb::UsbBus>;
+#[give_away_cell]
+static input_queue: &'static MutexInputQueue;
+
+#[rp_pico::entry]
 fn entry() -> ! {
     init();
 
@@ -76,6 +87,26 @@ fn init() {
         &mut pac.RESETS,
     );
 
+    let usb_bus = UsbBusAllocator::new(rp_pico::hal::usb::UsbBus::new(
+        pac.USBCTRL_REGS,
+        pac.USBCTRL_DPRAM,
+        clocks.usb_clock,
+        true,
+        &mut pac.RESETS,
+    ));
+    let usb_bus = singleton!(USB_BUS: UsbBusAllocator<rp_pico::hal::usb::UsbBus> = usb_bus).unwrap();
+    let serial = SerialPort::new(usb_bus);
+    give!(usb_serial = serial);
+    let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x1209, 0x0007))
+        .strings(&[StringDescriptors::default()
+            .manufacturer("Adrien")
+            .product("AOC-PICO")
+            .serial_number("TEST")])
+        .unwrap()
+        .device_class(2)
+        .build();
+    give!(usb_dev = usb_dev);
+
     let (mut uart_rx, uart_tx) = UartPeripheral::new(
         pac.UART0,
         (pins.gpio0.into_function(), pins.gpio1.into_function()),
@@ -93,6 +124,7 @@ fn init() {
     commands.add("aoc", multicore_runner);
 
     let console_input = singleton!(: MutexInputQueue = MutexInputQueue::new()).unwrap();
+    give!(input_queue = console_input);
     give!(console = Console::new(InputParser::new(&*console_input), commands));
     uart_rx.enable_rx_interrupt();
 
@@ -114,13 +146,35 @@ fn init() {
 
 fn run_console() -> ! {
     debug!("stack pointer: {:x}", read_sp());
+    let usb_dev = take!(usb_dev);
+    let usb_serial = take!(usb_serial);
+    let input_queue = take!(input_queue);
+
     let console = take!(console);
     loop {
+        while usb_dev.poll(&mut [usb_serial]) {
+            let mut vec = Vec::with_capacity(64);
+            let cap = vec.spare_capacity_mut();
+            let buf =
+                unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr() as *mut u8, cap.len()) };
+            match usb_serial.read(buf) {
+                Ok(len) if len > 0 => {
+                    debug!("received {} bytes", len);
+                    unsafe { vec.set_len(len) };
+                    input_queue.push(vec);
+                },
+                _ => {}
+            }
+        }
+
         for out in &mut *console {
+            /*
             let need_pend = borrow!(out_queue, |queue| queue.push(out));
             if need_pend {
                 NVIC::pend(interrupt::DMA_IRQ_0);
             }
+            */
+            usb_serial.write_all(&out).unwrap();
         }
     }
 }
