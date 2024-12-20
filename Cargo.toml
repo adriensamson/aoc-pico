@@ -14,6 +14,7 @@ panic-probe = { version = "0.3.2", features = ["print-defmt"] }
 embedded-alloc = "0.6.0"
 
 embed-init = {path = "./embed-init"}
+myasync = {path = "./myasync"}
 
 [patch.crates-io]
 rp2040-hal = { path = "../rp-hal/rp2040-hal" }

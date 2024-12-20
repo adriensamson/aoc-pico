@@ -1,3 +1,5 @@
+use alloc::boxed::Box;
+use cortex_m::asm::wfi;
 use crate::dma::DoubleChannelReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
@@ -45,7 +47,7 @@ fn entry() -> ! {
         NVIC::unmask(Interrupt::TIMER_IRQ_0);
     }
 
-    run_console()
+    main()
 }
 
 fn init() {
@@ -112,7 +114,11 @@ fn init() {
     give!(out_queue = OutQueue::new());
 }
 
-fn run_console() -> ! {
+fn main() -> ! {
+    myasync::Executor::new([Box::pin(run_console())], || wfi()).run();
+}
+
+async fn run_console() {
     debug!("stack pointer: {:x}", read_sp());
     let console = take!(console);
     loop {
