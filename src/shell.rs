@@ -36,10 +36,20 @@ impl InputQueue for VecDeque<Vec<u8>> {
     }
 }
 
+#[allow(async_fn_in_trait)]
+pub trait AsyncInputQueue: InputQueue {
+    async fn pop_wait(&mut self) -> Vec<u8>;
+}
+
 #[derive(Default)]
 pub struct InputParser<Q: InputQueue> {
     queue: Q,
     current: VecDeque<u8>,
+}
+
+pub trait AsyncInputIterator {
+    #[allow(async_fn_in_trait)]
+    async fn next_wait(&mut self) -> Input;
 }
 
 impl<Q: InputQueue> InputParser<Q> {
@@ -59,78 +69,128 @@ impl<Q: InputQueue> InputParser<Q> {
     }
 }
 
+impl<Q: AsyncInputQueue> InputParser<Q> {
+    async fn pop_byte_wait(&mut self) -> u8 {
+        if let Some(byte) = self.pop_byte() {
+            return byte;
+        }
+        self.current = self.queue.pop_wait().await.into();
+        Box::pin(self.pop_byte_wait()).await
+    }
+}
+
+impl<Q: AsyncInputQueue> AsyncInputIterator for InputParser<Q> {
+    async fn next_wait(&mut self) -> Input {
+        let mut acc = ParserAccumulator::new();
+        let mut b = self.pop_byte_wait().await;
+        loop {
+            match acc.advance(b) {
+                Ok(input ) => { return input; }
+                Err(acc2) => { acc = acc2; }
+            }
+            match self.pop_byte() {
+                Some(byte) => b = byte,
+                None => {
+                    self.current = acc.state.into_bytes().into();
+                    return Input::IncompleteLine(acc.current_line);
+                }
+            }
+        }
+    }
+}
+
+struct ParserAccumulator {
+    state: State,
+    current_line: String,
+}
+
+impl ParserAccumulator {
+    fn with(current_line: String, state: State) -> Self {
+        Self {state, current_line}
+    }
+
+    fn new() -> Self {
+        Self {
+            state: State::Normal,
+            current_line: String::with_capacity(64),
+        }
+    }
+
+    fn advance(self, b: u8) -> Result<Input, Self> {
+        let Self { state, mut current_line } = self;
+        match state {
+            State::Normal => {
+                match b {
+                    b'\n' | b'\r' => {
+                        Ok(Input::Line(current_line))
+                    }
+                    b'\x1b' => Err(Self::with(current_line, State::InEscape(Vec::from([b])))),
+                    b'\x00'..=b'\x1f' | b'\x7f' => {
+                        //debug!("control: {:X}", b);
+                        Ok(Input::Control(b as char))
+                    }
+                    b'\x20'..=b'\x7e' => {
+                        current_line.push(b as char);
+                        Err(Self::with(current_line, State::Normal))
+                    }
+                    b'\x80'..=b'\xff' => {
+                        Err(Self::with(current_line, State::InUtf8(Vec::from([b]))))
+                    }
+                }
+            }
+            State::InUtf8(mut v) => {
+                v.push(b);
+                if !matches!(b, b'\x80'..=b'\xff') {
+                    // invalid sequence
+                    Ok(Input::InvalidByteSequence(v))
+                } else if let Ok(s) = core::str::from_utf8(&v) {
+                    current_line.push_str(s);
+                    Err(Self::with(current_line, State::Normal))
+                } else {
+                    Err(Self::with(current_line, State::InUtf8(v)))
+                }
+            }
+            State::InEscape(mut v) => {
+                v.push(b);
+                if v.len() == 2 {
+                    if b == b'[' {
+                        //debug!("CSI");
+                        Err(Self::with(current_line, State::InEscape(v)))
+                    } else {
+                        //debug!("1byte escape");
+                        Ok(Input::EscapeSequence(EscapeSequence::from(v)))
+                    }
+                } else if matches!(b, b'\x40'..=b'\x7e') {
+                    //debug!("end of sequence");
+                    // end of sequence
+                    Ok(Input::EscapeSequence(EscapeSequence::from(v)))
+                } else {
+                    //debug!("continue");
+                    Err(Self::with(current_line, State::InEscape(v)))
+                }
+            }
+        }
+    }
+}
+
 impl<Q: InputQueue> Iterator for InputParser<Q> {
     type Item = Input;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut state = State::Normal;
-        let mut current_line = String::with_capacity(64);
+        let mut acc = ParserAccumulator::new();
+        let mut b = self.pop_byte()?;
         loop {
-            let b = match self.pop_byte() {
-                Some(b) => b,
+            match acc.advance(b) {
+                Ok(input) => return Some(input),
+                Err(acc2) => { acc = acc2 }
+            }
+            match self.pop_byte() {
+                Some(byte) => b = byte,
                 None => {
-                    //debug!("no more bytes");
-                    self.current = state.into_bytes().into();
-                    return if current_line.is_empty() {
-                        None
-                    } else {
-                        Some(Input::IncompleteLine(current_line))
-                    };
+                    self.current = acc.state.into_bytes().into();
+                    return Some(Input::IncompleteLine(acc.current_line));
                 }
             };
-            //debug!("state={:?} b={:X}", state, b);
-            match state {
-                State::Normal => {
-                    match b {
-                        b'\n' | b'\r' => {
-                            return Some(Input::Line(current_line));
-                        }
-                        b'\x1b' => state = State::InEscape(Vec::from([b])),
-                        b'\x00'..=b'\x1f' | b'\x7f' => {
-                            //debug!("control: {:X}", b);
-                            return Some(Input::Control(b as char));
-                        }
-                        b'\x20'..=b'\x7e' => {
-                            current_line.push(b as char);
-                            state = State::Normal;
-                        }
-                        b'\x80'..=b'\xff' => {
-                            state = State::InUtf8(Vec::from([b]));
-                        }
-                    }
-                }
-                State::InUtf8(mut v) => {
-                    v.push(b);
-                    if !matches!(b, b'\x80'..=b'\xff') {
-                        // invalid sequence
-                        return Some(Input::InvalidByteSequence(v));
-                    } else if let Ok(s) = core::str::from_utf8(&v) {
-                        current_line.push_str(s);
-                        state = State::Normal;
-                    } else {
-                        state = State::InUtf8(v);
-                    }
-                }
-                State::InEscape(mut v) => {
-                    v.push(b);
-                    if v.len() == 2 {
-                        if b == b'[' {
-                            //debug!("CSI");
-                            state = State::InEscape(v);
-                        } else {
-                            //debug!("1byte escape");
-                            return Some(Input::EscapeSequence(EscapeSequence::from(v)));
-                        }
-                    } else if matches!(b, b'\x40'..=b'\x7e') {
-                        //debug!("end of sequence");
-                        // end of sequence
-                        return Some(Input::EscapeSequence(EscapeSequence::from(v)));
-                    } else {
-                        //debug!("continue");
-                        state = State::InEscape(v);
-                    }
-                }
-            }
         }
     }
 }
@@ -216,7 +276,7 @@ impl Commands {
     }
 }
 
-pub struct Console<I: Iterator<Item = Input>> {
+pub struct Console<I> {
     input: I,
     commands: Commands,
     state: ConsoleState,
@@ -243,7 +303,7 @@ impl Default for ConsoleState {
     }
 }
 
-impl<I: Iterator<Item = Input>> Console<I> {
+impl<I> Console<I> {
     pub fn new(input: I, commands: Commands) -> Self {
         Self {
             input,
@@ -342,6 +402,89 @@ impl<I: Iterator<Item = Input>> Iterator for Console<I> {
                     Some(s.into_bytes())
                 }
                 _ => Some(Vec::new()),
+            },
+        }
+    }
+}
+
+impl<I: AsyncInputIterator> Console<I> {
+    pub async fn next_wait(&mut self) -> Vec<u8> {
+        match &mut self.state {
+            ConsoleState::RunCommand { cmd_line, input } => {
+                let mut args_iter = cmd_line.trim().split(' ').map(str::trim);
+                let name = args_iter.next().unwrap();
+                if let Some(command) = self.commands.get(name) {
+                    let args = args_iter.map(ToString::to_string).collect();
+                    self.state = ConsoleState::RunningCommand(Box::new(
+                        command
+                            .exec(args, core::mem::take(input))
+                            .map(|s| String::from("\r\n> ") + &s),
+                    ))
+                } else {
+                    self.state = ConsoleState::Error("unknown command")
+                }
+                Box::pin(self.next_wait()).await
+            }
+            ConsoleState::RunningCommand(command) => {
+                if let Some(line) = command.next() {
+                    return line.into_bytes();
+                }
+                self.state = ConsoleState::Prompt(String::new());
+                self.eol().as_bytes().to_vec()
+            }
+            ConsoleState::Error(err) => {
+                let mut res = err.to_string();
+                self.state = ConsoleState::Prompt(String::new());
+                res += self.eol();
+                res.into_bytes()
+            }
+            ConsoleState::ParsingInput {
+                cmd_line,
+                input: input_lines,
+                current_line,
+                ..
+            } => match self.input.next_wait().await {
+                Input::Line(s) => {
+                    current_line.push_str(&s);
+                    input_lines.push(core::mem::take(current_line));
+                    (s + self.eol()).into_bytes()
+                }
+                Input::IncompleteLine(s) => {
+                    current_line.push_str(&s);
+                    s.into_bytes()
+                }
+                Input::Control('\x04') => {
+                    input_lines.push(core::mem::take(current_line));
+                    self.state = ConsoleState::RunCommand {
+                        cmd_line: core::mem::take(cmd_line),
+                        input: core::mem::take(input_lines),
+                    };
+                    self.eol().as_bytes().to_vec()
+                }
+                _ => Vec::new(),
+            },
+            ConsoleState::Prompt(prompt) => match self.input.next_wait().await {
+                Input::Line(s) => {
+                    prompt.push_str(&s);
+                    if let Some(prompt) = prompt.strip_suffix('<') {
+                        self.state = ConsoleState::ParsingInput {
+                            cmd_line: prompt.to_string(),
+                            input: Vec::new(),
+                            current_line: String::new(),
+                        };
+                    } else {
+                        self.state = ConsoleState::RunCommand {
+                            cmd_line: core::mem::take(prompt),
+                            input: Vec::new(),
+                        };
+                    }
+                    (s + self.eol()).into_bytes()
+                }
+                Input::IncompleteLine(s) => {
+                    prompt.push_str(&s);
+                    s.into_bytes()
+                }
+                _ => Vec::new(),
             },
         }
     }

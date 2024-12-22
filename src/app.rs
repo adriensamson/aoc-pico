@@ -36,7 +36,7 @@ static console: Console<InputParser<&'static MutexInputQueue>>;
 #[give_away_cell]
 static console_writer: ConsoleUartDmaWriter<CH0, UART0, UartPinout>;
 
-#[cortex_m_rt::entry]
+#[rp_pico::entry]
 fn entry() -> ! {
     init();
 
@@ -122,11 +122,10 @@ async fn run_console() {
     debug!("stack pointer: {:x}", read_sp());
     let console = take!(console);
     loop {
-        for out in &mut *console {
-            let need_pend = borrow!(out_queue, |queue| queue.push(out));
-            if need_pend {
-                NVIC::pend(interrupt::DMA_IRQ_0);
-            }
+        let out = console.next_wait().await;
+        let need_pend = borrow!(out_queue, |queue| queue.push(out));
+        if need_pend {
+            NVIC::pend(interrupt::DMA_IRQ_0);
         }
     }
 }

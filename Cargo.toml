@@ -15,6 +15,7 @@ embedded-alloc = "0.6.0"
 
 embed-init = {path = "./embed-init"}
 myasync = {path = "./myasync"}
+log = "0.4.22"
 
 [patch.crates-io]
 rp2040-hal = { path = "../rp-hal/rp2040-hal" }

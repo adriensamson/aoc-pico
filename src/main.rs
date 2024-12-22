@@ -16,9 +16,13 @@ use panic_probe as _;
 use crate::dma::DoubleChannelReader;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use aoc_pico::shell::InputQueue;
+use aoc_pico::shell::{AsyncInputQueue, InputQueue};
 use core::cell::RefCell;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
+use defmt::debug;
 use rp_pico::hal::dma::single_buffer::{Config, Transfer};
 use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel};
 use rp_pico::hal::timer::Alarm;
@@ -143,15 +147,20 @@ impl<CH1: ChannelIndex, CH2: ChannelIndex, A: Alarm, U: UartDevice, P: ValidUart
     }
 }
 
-pub struct MutexInputQueue(Mutex<RefCell<VecDeque<Vec<u8>>>>);
+pub struct MutexInputQueue(Mutex<RefCell<(VecDeque<Vec<u8>>, Option<Waker>)>>);
 
 impl MutexInputQueue {
     fn new() -> Self {
-        Self(Mutex::new(RefCell::new(VecDeque::with_capacity(1024))))
+        Self(Mutex::new(RefCell::new((VecDeque::with_capacity(1024), None))))
     }
 
     fn push(&self, vec: Vec<u8>) {
-        critical_section::with(|cs| self.0.borrow_ref_mut(cs).push_back(vec));
+        critical_section::with(|cs| {
+            let (vd, w) = &mut *self.0.borrow_ref_mut(cs);
+            vd.push_back(vec);
+            debug!("wake");
+            w.take().map(Waker::wake);
+        });
     }
 
     fn read_into<D: UartDevice, P: ValidUartPinout<D>>(
@@ -159,7 +168,7 @@ impl MutexInputQueue {
         uart: &Reader<D, P>,
     ) -> Result<usize, ()> {
         let mut vec = critical_section::with(|cs| {
-            let mut q = self.0.borrow_ref_mut(cs);
+            let q = &mut self.0.borrow_ref_mut(cs).0;
             if q.back().is_some_and(|v| v.capacity() - v.len() >= 16) {
                 q.pop_back().unwrap()
             } else {
@@ -180,8 +189,30 @@ impl MutexInputQueue {
     }
 }
 
-impl InputQueue for &'static MutexInputQueue {
+impl<'a> InputQueue for &'a MutexInputQueue {
     fn pop(&mut self) -> Option<Vec<u8>> {
-        critical_section::with(|cs| self.0.borrow_ref_mut(cs).pop_front())
+        critical_section::with(|cs| self.0.borrow_ref_mut(cs).0.pop_front())
+    }
+}
+
+impl<'a> AsyncInputQueue for &'a MutexInputQueue {
+    async fn pop_wait(&mut self) -> Vec<u8> {
+        MutexInputQueueWaiter(self).await
+    }
+}
+
+struct MutexInputQueueWaiter<'a>(&'a MutexInputQueue);
+
+impl Future for MutexInputQueueWaiter<'_> {
+    type Output = Vec<u8>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(v) = critical_section::with(|cs| self.0.0.borrow_ref_mut(cs).0.pop_front()) {
+            return Poll::Ready(v);
+        }
+        critical_section::with(|cs| {
+            self.0.0.borrow_ref_mut(cs).1.replace(cx.waker().clone());
+        });
+        Poll::Pending
     }
 }
