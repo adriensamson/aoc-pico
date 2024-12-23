@@ -75,7 +75,7 @@ struct Position<'a, M> {
     direction: Direction,
 }
 
-impl<'a, M: Map> Position<'a, M> {
+impl<M: Map> Position<'_, M> {
     fn next(&self) -> Option<Self> {
         let (x, y) = match self.direction {
             Direction::Top => {
@@ -145,7 +145,7 @@ impl<'a> OneMoreWall<'a, AocDay6> {
     }
 }
 
-impl<'a, M: Map> Map for OneMoreWall<'a, M> {
+impl<M: Map> Map for OneMoreWall<'_, M> {
     fn height(&self) -> usize {
         self.map.height()
     }

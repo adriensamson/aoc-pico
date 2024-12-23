@@ -115,7 +115,7 @@ fn init() {
 }
 
 fn main() -> ! {
-    myasync::Executor::new([Box::pin(run_console())], || wfi()).run();
+    myasync::Executor::new([Box::pin(run_console())], wfi).run();
 }
 
 async fn run_console() {

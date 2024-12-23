@@ -159,7 +159,9 @@ impl MutexInputQueue {
             let (vd, w) = &mut *self.0.borrow_ref_mut(cs);
             vd.push_back(vec);
             debug!("wake");
-            w.take().map(Waker::wake);
+            if let Some(w) = w.take() {
+                w.wake();
+            }
         });
     }
 
@@ -189,7 +191,7 @@ impl MutexInputQueue {
     }
 }
 
-impl<'a> InputQueue for &'a MutexInputQueue {
+impl InputQueue for &'_ MutexInputQueue {
     fn pop(&mut self) -> Option<Vec<u8>> {
         critical_section::with(|cs| self.0.borrow_ref_mut(cs).0.pop_front())
     }
