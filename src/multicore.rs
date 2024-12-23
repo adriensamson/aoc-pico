@@ -6,7 +6,6 @@ use aoc_pico::shell::{Command, RunningCommand};
 use core::cell::UnsafeCell;
 use core::future::{ready, Future};
 use core::pin::Pin;
-use core::ptr::addr_of;
 use cortex_m::asm::wfe;
 use cortex_m::singleton;
 use critical_section::Mutex;
@@ -132,14 +131,10 @@ fn start_core1_with_fn(fifo: &mut SioFifo, f: impl FnOnce() + Send + 'static) {
             *cell.get() = Some(Box::new(f));
         }
     });
-    start_core1(
-        fifo,
-        addr_of!(core1_stack_start) as *mut u32,
-        core1_entry as *const _,
-    );
+    start_core1(fifo, &raw const core1_stack_start, core1_entry as *const _);
 }
 
-fn start_core1(fifo: &mut SioFifo, stack_ptr: *mut u32, entry: *const fn()) {
+fn start_core1(fifo: &mut SioFifo, stack_ptr: *const u32, entry: *const fn()) {
     // Reset core1
     let psm = unsafe { Peripherals::steal().PSM };
     psm.frce_off().modify(|_, w| w.proc1().set_bit());

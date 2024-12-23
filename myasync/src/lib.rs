@@ -66,7 +66,7 @@ impl Task {
     }
 
     fn waker(&self) -> Waker {
-        let data = (self as *const Self) as *const ();
+        let data = (&raw const self).cast();
         unsafe { Waker::from_raw(RawWaker::new(data, &RAW_WAKER_VTABLE)) }
     }
 }
@@ -75,7 +75,8 @@ fn waker_clone(data: *const ()) -> RawWaker {
     RawWaker::new(data, &RAW_WAKER_VTABLE)
 }
 fn waker_wake(data: *const ()) {
-    let task = unsafe { &mut *(data as *mut Task) };
+    let task = data.cast::<Task>().cast_mut();
+    let task = unsafe { task.as_mut().unwrap() };
     if task.state != TaskState::Finished {
         task.state = TaskState::Awakened;
     }

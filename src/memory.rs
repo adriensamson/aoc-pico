@@ -1,4 +1,3 @@
-use core::ptr::addr_of_mut;
 use cortex_m_rt::heap_start;
 use defmt::debug;
 use embedded_alloc::LlffHeap as Heap;
@@ -7,13 +6,13 @@ use embedded_alloc::LlffHeap as Heap;
 static HEAP: Heap = Heap::empty();
 
 extern "C" {
-    static mut _stack_end: usize;
-    static mut core1_stack_end: usize;
+    static _stack_end: usize;
+    static core1_stack_end: usize;
 }
 
 pub(crate) unsafe fn init_heap() {
     let heap_bottom = heap_start() as usize;
-    let heap_top = addr_of_mut!(core1_stack_end) as usize;
+    let heap_top = &raw const core1_stack_end as usize;
     let heap_size = heap_top - heap_bottom;
     debug!("HEAP size: {}k", heap_size / 1024);
     unsafe { HEAP.init(heap_bottom, heap_size) }
@@ -48,11 +47,11 @@ fn install_stack_guard(stack_bottom: usize) {
 }
 
 pub(crate) fn install_core0_stack_guard() {
-    install_stack_guard(addr_of_mut!(_stack_end) as usize)
+    install_stack_guard(&raw const _stack_end as usize)
 }
 
 pub(crate) fn install_core1_stack_guard() {
-    install_stack_guard(addr_of_mut!(core1_stack_end) as usize)
+    install_stack_guard(&raw const core1_stack_end as usize)
 }
 
 pub fn read_sp() -> usize {

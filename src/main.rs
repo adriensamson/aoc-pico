@@ -181,8 +181,7 @@ impl MutexInputQueue {
             }
         });
         let cap = vec.spare_capacity_mut();
-        let buf =
-            unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr() as *mut u8, cap.len()) };
+        let buf = unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr().cast(), cap.len()) };
         let len = uart.read_raw(buf).unwrap_or_default();
         unsafe { vec.set_len(vec.len() + len) };
         self.push(vec);
