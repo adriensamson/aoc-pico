@@ -2,6 +2,8 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::future::Future;
+use core::pin::Pin;
 
 #[allow(dead_code)]
 #[derive(Eq, PartialEq, Debug)]
@@ -181,28 +183,6 @@ impl ParserAccumulator {
     }
 }
 
-impl<Q: InputQueue> Iterator for InputParser<Q> {
-    type Item = Input;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut acc = ParserAccumulator::new();
-        let mut b = self.pop_byte()?;
-        loop {
-            match acc.advance(b) {
-                Ok(input) => return Some(input),
-                Err(acc2) => acc = acc2,
-            }
-            match self.pop_byte() {
-                Some(byte) => b = byte,
-                None => {
-                    self.current = acc.state.into_bytes().into();
-                    return Some(Input::IncompleteLine(acc.current_line));
-                }
-            };
-        }
-    }
-}
-
 #[derive(Eq, PartialEq, Default)]
 enum State {
     #[default]
@@ -232,7 +212,7 @@ impl State {
 }*/
 
 pub trait RunningCommand: Send {
-    fn next(&mut self) -> Option<String>;
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>>;
 }
 
 pub trait Command {
@@ -311,88 +291,6 @@ impl<I> Console<I> {
     }
 }
 
-impl<I: Iterator<Item = Input>> Iterator for Console<I> {
-    type Item = Vec<u8>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.state {
-            ConsoleState::RunCommand { cmd_line, input } => {
-                let mut args_iter = cmd_line.trim().split(' ').map(str::trim);
-                let name = args_iter.next().unwrap();
-                if let Some(command) = self.commands.get(name) {
-                    let args = args_iter.map(ToString::to_string).collect();
-                    self.state =
-                        ConsoleState::RunningCommand(command.exec(args, core::mem::take(input)))
-                } else {
-                    self.state = ConsoleState::Error("unknown command")
-                }
-                self.next()
-            }
-            ConsoleState::RunningCommand(command) => {
-                if let Some(line) = command.next() {
-                    return Some((String::from("\r\n> ") + &line).into_bytes());
-                }
-                self.state = ConsoleState::Prompt(String::new());
-                Some(self.eol().as_bytes().to_vec())
-            }
-            ConsoleState::Error(err) => {
-                let mut res = err.to_string();
-                self.state = ConsoleState::Prompt(String::new());
-                res += self.eol();
-                Some(res.into_bytes())
-            }
-            ConsoleState::ParsingInput {
-                cmd_line,
-                input: input_lines,
-                current_line,
-                ..
-            } => match self.input.next()? {
-                Input::Line(s) => {
-                    current_line.push_str(&s);
-                    input_lines.push(core::mem::take(current_line));
-                    Some((s + self.eol()).into_bytes())
-                }
-                Input::IncompleteLine(s) => {
-                    current_line.push_str(&s);
-                    Some(s.into_bytes())
-                }
-                Input::Control('\x04') => {
-                    input_lines.push(core::mem::take(current_line));
-                    self.state = ConsoleState::RunCommand {
-                        cmd_line: core::mem::take(cmd_line),
-                        input: core::mem::take(input_lines),
-                    };
-                    Some(self.eol().as_bytes().to_vec())
-                }
-                _ => Some(Vec::new()),
-            },
-            ConsoleState::Prompt(prompt) => match self.input.next()? {
-                Input::Line(s) => {
-                    prompt.push_str(&s);
-                    if let Some(prompt) = prompt.strip_suffix('<') {
-                        self.state = ConsoleState::ParsingInput {
-                            cmd_line: prompt.to_string(),
-                            input: Vec::new(),
-                            current_line: String::new(),
-                        };
-                    } else {
-                        self.state = ConsoleState::RunCommand {
-                            cmd_line: core::mem::take(prompt),
-                            input: Vec::new(),
-                        };
-                    }
-                    Some((s + self.eol()).into_bytes())
-                }
-                Input::IncompleteLine(s) => {
-                    prompt.push_str(&s);
-                    Some(s.into_bytes())
-                }
-                _ => Some(Vec::new()),
-            },
-        }
-    }
-}
-
 impl<I: AsyncInputIterator> Console<I> {
     pub async fn next_wait(&mut self) -> Vec<u8> {
         match &mut self.state {
@@ -409,7 +307,7 @@ impl<I: AsyncInputIterator> Console<I> {
                 Box::pin(self.next_wait()).await
             }
             ConsoleState::RunningCommand(command) => {
-                if let Some(line) = command.next() {
+                if let Some(line) = command.next().await {
                     return (String::from("\r\n> ") + &line).into_bytes();
                 }
                 self.state = ConsoleState::Prompt(String::new());

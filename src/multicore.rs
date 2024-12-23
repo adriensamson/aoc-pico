@@ -4,7 +4,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use aoc_pico::shell::{Command, RunningCommand};
 use core::cell::UnsafeCell;
+use core::future::{ready, Future};
+use core::pin::Pin;
 use core::ptr::addr_of;
+use cortex_m::asm::wfe;
 use cortex_m::singleton;
 use critical_section::Mutex;
 use defmt::debug;
@@ -42,17 +45,17 @@ impl MulticoreReceiver {
 }
 
 impl RunningCommand for MulticoreReceiver {
-    fn next(&mut self) -> Option<String> {
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>> {
         if self.finished {
-            return None;
+            return Box::pin(ready(None));
         }
-        let addr = self.fifo.read_blocking() as *mut Option<String>;
+        let addr = self.fifo.read_blocking() as *mut Option<String>; // TODO: async
         debug!("core0: read {:X}", addr);
         let item = unsafe { Box::from_raw(addr) };
         if item.is_none() {
             self.finished = true;
         }
-        *item
+        Box::pin(ready(*item))
     }
 }
 
@@ -61,27 +64,33 @@ struct MulticoreRunner<C: Command> {
     inner: C,
 }
 
-impl<C: Command> MulticoreRunner<C> {
+impl<C: Command + 'static> MulticoreRunner<C> {
     fn new(fifo: SioFifo, inner: C) -> Self {
         Self { fifo, inner }
     }
 
-    fn run(&mut self) -> ! {
-        loop {
-            let addr = self.fifo.read_blocking() as *mut (Vec<String>, Vec<String>);
-            debug!("core1 read {:X}", addr);
-            let line = unsafe { Box::from_raw(addr) };
-            let (args, input) = *line;
-            let mut running = self.inner.exec(args, input);
-            while let Some(res) = running.next() {
-                let boxed = Box::new(Some(res));
-                debug!("core1 write some");
-                self.fifo.write_blocking(Box::into_raw(boxed) as u32);
-            }
-            let none = Box::new(Option::<String>::None);
-            debug!("core1 write none");
-            self.fifo.write_blocking(Box::into_raw(none) as u32);
-        }
+    fn run(mut self) -> ! {
+        myasync::Executor::new(
+            [Box::pin(async move {
+                loop {
+                    let addr = self.fifo.read_blocking() as *mut (Vec<String>, Vec<String>);
+                    debug!("core1 read {:X}", addr);
+                    let line = unsafe { Box::from_raw(addr) };
+                    let (args, input) = *line;
+                    let mut running = self.inner.exec(args, input);
+                    while let Some(res) = running.next().await {
+                        let boxed = Box::new(Some(res));
+                        debug!("core1 write some");
+                        self.fifo.write_blocking(Box::into_raw(boxed) as u32);
+                    }
+                    let none = Box::new(Option::<String>::None);
+                    debug!("core1 write none");
+                    self.fifo.write_blocking(Box::into_raw(none) as u32);
+                }
+            })],
+            wfe,
+        )
+        .run()
     }
 }
 
@@ -91,7 +100,7 @@ pub fn create_multicore_runner(
 ) -> MulticoreProxy {
     let f = move || {
         let fifo1 = unsafe { Sio::new(Peripherals::steal().SIO).fifo };
-        let mut multicore_runner = MulticoreRunner::new(fifo1, runner);
+        let multicore_runner = MulticoreRunner::new(fifo1, runner);
         debug!("core1: run!");
         multicore_runner.run()
     };

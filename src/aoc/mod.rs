@@ -9,6 +9,8 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::future::{ready, Future};
+use core::pin::Pin;
 
 mod day1;
 mod day2;
@@ -33,8 +35,8 @@ impl Default for AocRunner {
 
 struct ErrRunningCommand(Option<String>);
 impl RunningCommand for ErrRunningCommand {
-    fn next(&mut self) -> Option<String> {
-        self.0.take()
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>> {
+        Box::pin(ready(self.0.take()))
     }
 }
 
@@ -90,21 +92,21 @@ where
 struct RunningAoc<D: AocDay>(D, u8);
 
 impl<D: AocDay> RunningCommand for RunningAoc<D> {
-    fn next(&mut self) -> Option<String> {
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>> {
         match self.1 {
             0 => {
                 self.1 = 1;
-                Some(String::from("running..."))
+                Box::pin(ready(Some(String::from("running..."))))
             }
             1 => {
                 self.1 = 2;
-                Some(format!("Part1: {}", self.0.part1()))
+                Box::pin(ready(Some(format!("Part1: {}", self.0.part1()))))
             }
             2 => {
                 self.1 = 3;
-                Some(format!("Part2: {}", self.0.part2()))
+                Box::pin(ready(Some(format!("Part2: {}", self.0.part2()))))
             }
-            _ => None,
+            _ => Box::pin(ready(None)),
         }
     }
 }
