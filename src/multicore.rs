@@ -2,7 +2,7 @@ use crate::memory::install_core1_stack_guard;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
-use aoc_pico::shell::Command;
+use aoc_pico::shell::{Command, RunningCommand};
 use core::cell::UnsafeCell;
 use core::ptr::addr_of;
 use cortex_m::singleton;
@@ -17,15 +17,13 @@ pub struct MulticoreProxy {
 }
 
 impl Command for MulticoreProxy {
-    type Output = MulticoreReceiver;
-
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output {
+    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
         let boxed = Box::new((args, input));
         let ptr = Box::into_raw(boxed);
         debug!("core0: write {:X}", ptr);
         self.fifo.write_blocking(ptr as u32);
         let fifo: &'static mut SioFifo = unsafe { core::mem::transmute(&mut self.fifo) };
-        MulticoreReceiver::new(fifo)
+        Box::new(MulticoreReceiver::new(fifo))
     }
 }
 
@@ -43,10 +41,8 @@ impl MulticoreReceiver {
     }
 }
 
-impl Iterator for MulticoreReceiver {
-    type Item = String;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl RunningCommand for MulticoreReceiver {
+    fn next(&mut self) -> Option<String> {
         if self.finished {
             return None;
         }
@@ -76,7 +72,8 @@ impl<C: Command> MulticoreRunner<C> {
             debug!("core1 read {:X}", addr);
             let line = unsafe { Box::from_raw(addr) };
             let (args, input) = *line;
-            for res in self.inner.exec(args, input) {
+            let mut running = self.inner.exec(args, input);
+            while let Some(res) = running.next() {
                 let boxed = Box::new(Some(res));
                 debug!("core1 write some");
                 self.fifo.write_blocking(Box::into_raw(boxed) as u32);

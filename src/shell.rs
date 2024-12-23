@@ -223,37 +223,18 @@ impl State {
     }
 }*/
 
+pub trait RunningCommand: Send {
+    fn next(&mut self) -> Option<String>;
+}
+
 pub trait Command {
-    type Output: Iterator<Item = String> + Send;
-
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output;
-}
-
-trait DynCommand: Send {
-    fn exec(
-        &mut self,
-        args: Vec<String>,
-        input: Vec<String>,
-    ) -> Box<dyn Iterator<Item = String> + Send + 'static>;
-}
-
-impl<C: Command + Send> DynCommand for C
-where
-    C::Output: 'static,
-{
-    fn exec(
-        &mut self,
-        args: Vec<String>,
-        input: Vec<String>,
-    ) -> Box<dyn Iterator<Item = String> + Send + 'static> {
-        Box::new(self.exec(args, input))
-    }
+    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand>;
 }
 
 #[derive(Default)]
 pub struct Commands {
     names: Vec<&'static str>,
-    commands: Vec<Box<dyn DynCommand>>,
+    commands: Vec<Box<dyn Command>>,
 }
 
 impl Commands {
@@ -266,7 +247,7 @@ impl Commands {
         self.commands.push(Box::new(command));
     }
 
-    fn get(&mut self, name: &str) -> Option<&mut Box<dyn DynCommand>> {
+    fn get(&mut self, name: &str) -> Option<&mut Box<dyn Command>> {
         let idx = self
             .names
             .iter()
@@ -293,7 +274,7 @@ enum ConsoleState {
         cmd_line: String,
         input: Vec<String>,
     },
-    RunningCommand(Box<dyn Iterator<Item = String> + Send>),
+    RunningCommand(Box<dyn RunningCommand>),
     Error(&'static str),
 }
 
@@ -332,11 +313,9 @@ impl<I: Iterator<Item = Input>> Iterator for Console<I> {
                 let name = args_iter.next().unwrap();
                 if let Some(command) = self.commands.get(name) {
                     let args = args_iter.map(ToString::to_string).collect();
-                    self.state = ConsoleState::RunningCommand(Box::new(
-                        command
-                            .exec(args, core::mem::take(input))
-                            .map(|s| String::from("\r\n> ") + &s),
-                    ))
+                    self.state = ConsoleState::RunningCommand(
+                        command.exec(args, core::mem::take(input))
+                    )
                 } else {
                     self.state = ConsoleState::Error("unknown command")
                 }
@@ -344,7 +323,7 @@ impl<I: Iterator<Item = Input>> Iterator for Console<I> {
             }
             ConsoleState::RunningCommand(command) => {
                 if let Some(line) = command.next() {
-                    return Some(line.into_bytes());
+                    return Some((String::from("\r\n> ") + &line).into_bytes());
                 }
                 self.state = ConsoleState::Prompt(String::new());
                 Some(self.eol().as_bytes().to_vec())
@@ -415,11 +394,9 @@ impl<I: AsyncInputIterator> Console<I> {
                 let name = args_iter.next().unwrap();
                 if let Some(command) = self.commands.get(name) {
                     let args = args_iter.map(ToString::to_string).collect();
-                    self.state = ConsoleState::RunningCommand(Box::new(
-                        command
-                            .exec(args, core::mem::take(input))
-                            .map(|s| String::from("\r\n> ") + &s),
-                    ))
+                    self.state = ConsoleState::RunningCommand(
+                        command.exec(args, core::mem::take(input)),
+                    )
                 } else {
                     self.state = ConsoleState::Error("unknown command")
                 }
@@ -427,7 +404,7 @@ impl<I: AsyncInputIterator> Console<I> {
             }
             ConsoleState::RunningCommand(command) => {
                 if let Some(line) = command.next() {
-                    return line.into_bytes();
+                    return (String::from("\r\n> ") + &line).into_bytes();
                 }
                 self.state = ConsoleState::Prompt(String::new());
                 self.eol().as_bytes().to_vec()

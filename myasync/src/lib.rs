@@ -12,7 +12,7 @@ pub struct Executor<Idle: Fn(), const N: usize> {
 }
 
 impl<Idle: Fn(), const N: usize> Executor<Idle, N> {
-    pub fn new(futures: [Pin<Box<dyn Future<Output=()> + Send + 'static>>; N], idle: Idle) -> Self {
+    pub fn new(futures: [Pin<Box<dyn Future<Output=()> + 'static>>; N], idle: Idle) -> Self {
         Self {
             tasks: futures.map(Task::new),
             idle,
@@ -53,12 +53,12 @@ enum TaskState {
 }
 
 struct Task {
-    future: Pin<Box<dyn Future<Output=()> + Send + 'static>>,
+    future: Pin<Box<dyn Future<Output=()> + 'static>>,
     state: TaskState,
 }
 
 impl Task {
-    fn new(future: Pin<Box<dyn Future<Output=()> + Send + 'static>>) -> Self {
+    fn new(future: Pin<Box<dyn Future<Output=()> + 'static>>) -> Self {
         Self {
             future,
             state: TaskState::NotStarted,

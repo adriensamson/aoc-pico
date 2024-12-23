@@ -4,7 +4,7 @@ use crate::aoc::day3::AocDay3;
 use crate::aoc::day4::AocDay4;
 use crate::aoc::day5::AocDay5;
 use crate::aoc::day6::AocDay6;
-use crate::shell::Command;
+use crate::shell::{Command, RunningCommand};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
@@ -31,31 +31,32 @@ impl Default for AocRunner {
     }
 }
 
-impl Command for AocRunner {
-    type Output = Box<dyn Iterator<Item = String> + Send>;
+struct ErrRunningCommand(Option<String>);
+impl RunningCommand for ErrRunningCommand {
+    fn next(&mut self) -> Option<String> {
+        self.0.take()
+    }
+}
 
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Self::Output {
+impl Command for AocRunner {
+    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
         let day = args
             .first()
             .map(String::as_str)
             .unwrap_or("0")
             .parse::<usize>();
         if day.is_err() {
-            return Box::new(Some(String::from("bad day")).into_iter());
+            return Box::new(ErrRunningCommand(Some(String::from("bad day"))));
         }
         let day = day.unwrap();
         if day >= NB_DAYS {
-            return Box::new(Some(String::from("bad day")).into_iter());
+            return Box::new(ErrRunningCommand(Some(String::from("bad day"))));
         }
-        Box::new(
-            Some(String::from("running..."))
-                .into_iter()
-                .chain(DAYS[day](input)),
-        )
+        DAYS[day](input)
     }
 }
 
-type AocDayFn = fn(Vec<String>) -> Box<dyn Iterator<Item = String> + Send>;
+type AocDayFn = fn(Vec<String>) -> Box<dyn RunningCommand>;
 
 const NB_DAYS: usize = 7;
 const DAYS: [AocDayFn; NB_DAYS] = [
@@ -81,24 +82,27 @@ where
         String::new()
     }
 
-    fn run(input: Vec<String>) -> Box<dyn Iterator<Item = String> + Send> {
-        Box::new(AocIter(Self::new(input), 0))
+    fn run(input: Vec<String>) -> Box<dyn RunningCommand> {
+        Box::new(RunningAoc(Self::new(input), 0))
     }
 }
 
-struct AocIter<D: AocDay>(D, u8);
+struct RunningAoc<D: AocDay>(D, u8);
 
-impl<D: AocDay> Iterator for AocIter<D> {
-    type Item = String;
+impl<D: AocDay> RunningCommand for RunningAoc<D> {
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<String> {
         match self.1 {
             0 => {
                 self.1 = 1;
-                Some(format!("Part1: {}", self.0.part1()))
+                Some(String::from("running..."))
             }
             1 => {
                 self.1 = 2;
+                Some(format!("Part1: {}", self.0.part1()))
+            }
+            2 => {
+                self.1 = 3;
                 Some(format!("Part2: {}", self.0.part2()))
             }
             _ => None,
