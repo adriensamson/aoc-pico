@@ -1,14 +1,15 @@
-use alloc::boxed::Box;
-use cortex_m::asm::wfi;
 use crate::dma::DoubleChannelReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
 use crate::{ConsoleDmaReader, ConsoleUartDmaWriter, MutexInputQueue, OutQueue};
+use alloc::boxed::Box;
 use aoc_pico::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
+use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
+use embed_init::{borrow, give, give_away_cell, shared_cell, take};
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{DMAExt, SingleChannel, CH0, CH1, CH2};
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
@@ -16,10 +17,9 @@ use rp_pico::hal::gpio::{FunctionUart, PullDown};
 use rp_pico::hal::timer::Alarm0;
 use rp_pico::hal::uart::{UartConfig, UartPeripheral};
 use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Timer, Watchdog};
-use rp_pico::pac::{interrupt, Interrupt};
 use rp_pico::pac::UART0;
+use rp_pico::pac::{interrupt, Interrupt};
 use rp_pico::XOSC_CRYSTAL_FREQ;
-use embed_init::{borrow, give, give_away_cell, shared_cell, take};
 
 type UartPinout = (
     Pin<Gpio0, FunctionUart, PullDown>,

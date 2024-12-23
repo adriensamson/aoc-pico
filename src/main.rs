@@ -151,7 +151,10 @@ pub struct MutexInputQueue(Mutex<RefCell<(VecDeque<Vec<u8>>, Option<Waker>)>>);
 
 impl MutexInputQueue {
     fn new() -> Self {
-        Self(Mutex::new(RefCell::new((VecDeque::with_capacity(1024), None))))
+        Self(Mutex::new(RefCell::new((
+            VecDeque::with_capacity(1024),
+            None,
+        ))))
     }
 
     fn push(&self, vec: Vec<u8>) {
@@ -209,11 +212,11 @@ impl Future for MutexInputQueueWaiter<'_> {
     type Output = Vec<u8>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(v) = critical_section::with(|cs| self.0.0.borrow_ref_mut(cs).0.pop_front()) {
+        if let Some(v) = critical_section::with(|cs| self.0 .0.borrow_ref_mut(cs).0.pop_front()) {
             return Poll::Ready(v);
         }
         critical_section::with(|cs| {
-            self.0.0.borrow_ref_mut(cs).1.replace(cx.waker().clone());
+            self.0 .0.borrow_ref_mut(cs).1.replace(cx.waker().clone());
         });
         Poll::Pending
     }

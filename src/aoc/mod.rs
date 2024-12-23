@@ -90,7 +90,6 @@ where
 struct RunningAoc<D: AocDay>(D, u8);
 
 impl<D: AocDay> RunningCommand for RunningAoc<D> {
-
     fn next(&mut self) -> Option<String> {
         match self.1 {
             0 => {

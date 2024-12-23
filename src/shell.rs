@@ -85,8 +85,12 @@ impl<Q: AsyncInputQueue> AsyncInputIterator for InputParser<Q> {
         let mut b = self.pop_byte_wait().await;
         loop {
             match acc.advance(b) {
-                Ok(input ) => { return input; }
-                Err(acc2) => { acc = acc2; }
+                Ok(input) => {
+                    return input;
+                }
+                Err(acc2) => {
+                    acc = acc2;
+                }
             }
             match self.pop_byte() {
                 Some(byte) => b = byte,
@@ -106,7 +110,10 @@ struct ParserAccumulator {
 
 impl ParserAccumulator {
     fn with(current_line: String, state: State) -> Self {
-        Self {state, current_line}
+        Self {
+            state,
+            current_line,
+        }
     }
 
     fn new() -> Self {
@@ -117,13 +124,14 @@ impl ParserAccumulator {
     }
 
     fn advance(self, b: u8) -> Result<Input, Self> {
-        let Self { state, mut current_line } = self;
+        let Self {
+            state,
+            mut current_line,
+        } = self;
         match state {
             State::Normal => {
                 match b {
-                    b'\n' | b'\r' => {
-                        Ok(Input::Line(current_line))
-                    }
+                    b'\n' | b'\r' => Ok(Input::Line(current_line)),
                     b'\x1b' => Err(Self::with(current_line, State::InEscape(Vec::from([b])))),
                     b'\x00'..=b'\x1f' | b'\x7f' => {
                         //debug!("control: {:X}", b);
@@ -182,7 +190,7 @@ impl<Q: InputQueue> Iterator for InputParser<Q> {
         loop {
             match acc.advance(b) {
                 Ok(input) => return Some(input),
-                Err(acc2) => { acc = acc2 }
+                Err(acc2) => acc = acc2,
             }
             match self.pop_byte() {
                 Some(byte) => b = byte,
@@ -313,9 +321,8 @@ impl<I: Iterator<Item = Input>> Iterator for Console<I> {
                 let name = args_iter.next().unwrap();
                 if let Some(command) = self.commands.get(name) {
                     let args = args_iter.map(ToString::to_string).collect();
-                    self.state = ConsoleState::RunningCommand(
-                        command.exec(args, core::mem::take(input))
-                    )
+                    self.state =
+                        ConsoleState::RunningCommand(command.exec(args, core::mem::take(input)))
                 } else {
                     self.state = ConsoleState::Error("unknown command")
                 }
@@ -394,9 +401,8 @@ impl<I: AsyncInputIterator> Console<I> {
                 let name = args_iter.next().unwrap();
                 if let Some(command) = self.commands.get(name) {
                     let args = args_iter.map(ToString::to_string).collect();
-                    self.state = ConsoleState::RunningCommand(
-                        command.exec(args, core::mem::take(input)),
-                    )
+                    self.state =
+                        ConsoleState::RunningCommand(command.exec(args, core::mem::take(input)))
                 } else {
                     self.state = ConsoleState::Error("unknown command")
                 }
