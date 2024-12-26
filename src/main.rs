@@ -8,6 +8,7 @@ mod dma;
 mod memory;
 mod multicore;
 
+use alloc::borrow::ToOwned;
 #[allow(unused_imports)]
 use defmt_rtt as _;
 #[allow(unused_imports)]
@@ -24,26 +25,9 @@ use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
 use defmt::debug;
 use rp_pico::hal::dma::single_buffer::{Config, Transfer};
-use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget, SingleChannel};
+use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget};
 use rp_pico::hal::timer::Alarm;
 use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout, Writer};
-
-pub struct OutQueue(VecDeque<Vec<u8>>);
-
-impl OutQueue {
-    fn new() -> Self {
-        Self(VecDeque::new())
-    }
-
-    fn push(&mut self, data: Vec<u8>) -> bool {
-        self.0.push_back(data);
-        self.0.len() == 1
-    }
-
-    fn pop(&mut self) -> Option<Vec<u8>> {
-        self.0.pop_front()
-    }
-}
 
 struct VecReadTarget(Vec<u8>);
 
@@ -81,25 +65,6 @@ impl<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter
                 self.output(line);
             }
             Self::Poisoned => unreachable!(),
-        }
-    }
-
-    fn flush(&mut self) {
-        match core::mem::replace(self, Self::Poisoned) {
-            Self::Ready(writer, ch) => *self = Self::Ready(writer, ch),
-            Self::Transferring(transfer) => {
-                let (ch, _, writer) = transfer.wait();
-                *self = Self::Ready(writer, ch);
-            }
-            Self::Poisoned => unreachable!(),
-        }
-    }
-
-    fn check_irq0(&mut self) -> bool {
-        match self {
-            Self::Ready(_, ch) => ch.check_irq0(),
-            Self::Transferring(transfer) => transfer.check_irq0(),
-            Self::Poisoned => false,
         }
     }
 }
@@ -218,5 +183,127 @@ impl Future for MutexInputQueueWaiter<'_> {
             self.0 .0.borrow_ref_mut(cs).1.replace(cx.waker().clone());
         });
         Poll::Pending
+    }
+}
+
+struct WakerSlot {
+    triggered: bool,
+    waker: Option<Waker>
+}
+
+impl WakerSlot {
+    const fn new() -> Self {
+        Self {
+            triggered: false,
+            waker: None,
+        }
+    }
+
+    fn register(&mut self, waker: &Waker) {
+        if let Some(w) = &mut self.waker {
+            waker.clone_into(w)
+        } else {
+            self.waker.replace(waker.clone());
+        }
+        self.triggered = false;
+    }
+
+    fn wake(&mut self) {
+        self.triggered = true;
+        if let Some(w) = self.waker.take() {
+            w.wake();
+        }
+    }
+
+    fn unregister(&mut self) {
+        self.waker.take();
+    }
+
+    fn check_triggered(&mut self) -> bool {
+        let triggered = self.triggered;
+        self.triggered = false;
+        triggered
+    }
+}
+
+struct WakerCell(Mutex<RefCell<WakerSlot>>);
+
+impl WakerCell {
+    pub const fn new() -> Self {
+        Self(Mutex::new(RefCell::new(WakerSlot::new())))
+    }
+
+    pub fn as_future(&self) -> WakerFuture {
+        WakerFuture(self)
+    }
+}
+
+struct WakerFuture<'a>(&'a WakerCell);
+
+impl Future for WakerFuture<'_> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        critical_section::with(|cs| {
+            let mut slot = self.0.0.borrow_ref_mut(cs);
+            if slot.check_triggered() {
+                slot.unregister();
+                Poll::Ready(())
+            } else {
+                slot.register(cx.waker());
+                Poll::Pending
+            }
+        })
+    }
+}
+
+struct DmaIrq0Listener([WakerCell; 12]);
+
+impl DmaIrq0Listener {
+    const fn new() -> Self {
+        Self([const { WakerCell::new() }; 12])
+    }
+
+    fn wait(&self, channel: usize) -> WakerFuture {
+        self.0[channel].as_future()
+    }
+
+    fn on_irq(&self) {
+        critical_section::with(|cs| {
+            let dma = rp_pico::pac::DMA::ptr();
+            let status = unsafe { dma.as_ref().unwrap().ints0().read().ints0().bits() };
+            for ch in 0..12 {
+                if status & (1 << ch) != 0 {
+                    self.0[ch].0.borrow_ref_mut(cs).wake();
+                }
+            }
+            unsafe { dma.as_ref().unwrap().ints0().write(|w| w.bits(status as u32)) };
+        })
+    }
+}
+
+
+struct DmaIrq1Listener([WakerCell; 12]);
+
+impl DmaIrq1Listener {
+    const fn new() -> Self {
+        Self([const { WakerCell::new() }; 12])
+    }
+
+    fn wait_done(&self, channel: usize) -> WakerFuture {
+        self.0[channel].as_future()
+    }
+
+    fn on_irq(&self) {
+        critical_section::with(|cs| {
+            let dma = rp_pico::pac::DMA::ptr();
+            let status = unsafe { dma.as_ref().unwrap().ints1().read().ints1().bits() };
+            for ch in 0..12 {
+                if status & (1 << ch) != 0 {
+                    self.0[ch].0.borrow_ref_mut(cs).wake();
+                }
+            }
+            unsafe { dma.as_ref().unwrap().ints1().write(|w| w.bits(status as u32)) };
+        })
     }
 }
