@@ -13,7 +13,7 @@ impl DmaIrq0Handler {
 
     pub fn on_irq(&self) {
         critical_section::with(|cs| {
-            let dma = rp2040_pac::DMA::ptr();
+            let dma = rp2040_hal::pac::DMA::ptr();
             let status = unsafe { dma.as_ref().unwrap().ints0().read().ints0().bits() };
             for ch in 0..12 {
                 if status & (1 << ch) != 0 {
@@ -39,7 +39,7 @@ impl DmaIrq1Handler {
 
     pub fn on_irq(&self) {
         critical_section::with(|cs| {
-            let dma = rp2040_pac::DMA::ptr();
+            let dma = rp2040_hal::pac::DMA::ptr();
             let status = unsafe { dma.as_ref().unwrap().ints1().read().ints1().bits() };
             for ch in 0..12 {
                 if status & (1 << ch) != 0 {

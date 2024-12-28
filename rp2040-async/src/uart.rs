@@ -1,81 +1,92 @@
 use core::cell::RefCell;
 use core::future::Future;
 use core::pin::Pin;
-use core::ops::Range;
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
+use rp2040_hal::pac::UART0;
+use rp2040_hal::uart::{Reader, UartDevice, ValidUartPinout};
 
-struct UartSlot {
+struct UartSlot<D: UartDevice, P: ValidUartPinout<D>> {
     len_read: usize,
-    buf_waker: Option<(Range<*mut u8>, Waker)>
+    reader: *mut Reader<D, P>,
+    buf: (*mut u8, usize),
+    waker: Waker,
 }
-impl UartSlot {
+struct UartCell<D: UartDevice, P: ValidUartPinout<D>>(Mutex<RefCell<Option<UartSlot<D, P>>>>);
+
+impl<D: UartDevice, P: ValidUartPinout<D>> UartCell<D, P> {
     const fn new() -> Self {
-        Self {
-            len_read: 0,
-            buf_waker: const { None }
-        }
+        Self(Mutex::new(RefCell::new(const { None })))
     }
 
-    fn register(&mut self, buf: &mut [u8], waker: &Waker) {
-        self.len_read = 0;
-        self.buf_waker = Some((buf.as_mut_ptr_range(), waker.clone()));
-    }
-
-    fn unregister(&mut self) {
-        self.len_read = 0;
-        self.buf_waker = None;
-    }
-}
-
-struct UartCell(Mutex<RefCell<UartSlot>>);
-
-impl UartCell {
-    const fn new() -> Self {
-        Self(Mutex::new(RefCell::new(UartSlot::new())))
-    }
-}
-
-pub struct UartRxFuture<'a, 'b>(&'a UartCell, &'b mut [u8]);
-impl Future for UartRxFuture<'_, '_> {
-    type Output = usize;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn register(&self, reader: *mut Reader<D, P>, buf: (*mut u8, usize), waker: &Waker) {
         critical_section::with(|cs| {
-            let mut slot = self.0.0.borrow_ref_mut(cs);
-            if slot.len_read > 0 {
-                slot.unregister();
-                Poll::Ready(slot.len_read)
+            *self.0.borrow_ref_mut(cs) = Some(UartSlot {
+                len_read: 0,
+                reader,
+                buf,
+                waker: waker.clone(),
+            });
+        });
+    }
+
+    fn unregister(&self) {
+        critical_section::with(|cs| {
+            *self.0.borrow_ref_mut(cs) = None;
+        });
+    }
+
+    fn check_len(&self) -> Option<usize> {
+        critical_section::with(|cs| {
+            let len = self.0.borrow_ref(cs).as_ref().map(|slot| slot.len_read)?;
+            if len > 0 {
+                Some(len)
             } else {
-                slot.register(self.1, cx.waker());
-                Poll::Pending
+                None
+            }
+        })
+    }
+
+    fn on_irq(&self) {
+        critical_section::with(|cs| {
+            if let Some(slot) = &mut *self.0.borrow_ref_mut(cs) {
+                let device = unsafe { slot.reader.as_mut().unwrap() };
+                let buf = unsafe { core::slice::from_raw_parts_mut(slot.buf.0, slot.buf.1) };
+                if let Ok(len) = device.read_raw(buf) {
+                    slot.len_read = len;
+                    slot.waker.wake_by_ref();
+                }
             }
         })
     }
 }
 
-pub struct Uart0IrqHandler(UartCell);
+pub struct UartRxFuture<'a, 'b, D: UartDevice, P: ValidUartPinout<D>>(&'a UartCell<D, P>, &'b mut Reader<D, P>, &'b mut [u8]);
+impl<D: UartDevice, P: ValidUartPinout<D>> Future for UartRxFuture<'_, '_, D, P> {
+    type Output = usize;
 
-impl Uart0IrqHandler {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(len) = self.0.check_len() {
+            self.0.unregister();
+            return Poll::Ready(len);
+        }
+        self.0.register(&raw mut *self.1, (self.2.as_mut_ptr(), self.2.len()), cx.waker());
+        Poll::Pending
+    }
+}
+
+pub struct Uart0IrqHandler<P: ValidUartPinout<UART0>>(UartCell<UART0, P>);
+
+impl<P: ValidUartPinout<UART0>> Uart0IrqHandler<P> {
     pub const fn new() -> Self {
         Self(UartCell::new())
     }
 
-    pub fn wait_rx(&self, buf: &mut [u8]) -> UartRxFuture {
-        UartRxFuture(&self.0, buf)
+    pub fn wait_rx<'a>(&self, device: &'a mut Reader<UART0, P>, buf: &'a mut [u8]) -> UartRxFuture<'_, 'a, UART0, P> {
+        UartRxFuture(&self.0, device, buf)
     }
 
     pub fn on_irq(&self) {
-        critical_section::with(|cs| {
-            let mut slot = self.0.0.borrow_ref_mut(cs);
-            if let Some((buf, waker)) = slot.buf_waker.take() {
-                let uart0 = unsafe { rp2040_pac::UART0::ptr().as_ref().unwrap() };
-                uart0.uartdr().read();
-                todo!();
-
-                waker.wake();
-            }
-        })
-
+        self.0.on_irq()
     }
 }
