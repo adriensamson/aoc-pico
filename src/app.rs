@@ -1,7 +1,7 @@
 use crate::dma::DoubleChannelReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
-use crate::{ConsoleDmaReader, ConsoleUartDmaWriter, DmaIrq0Listener, MutexInputQueue};
+use crate::{ConsoleDmaReader, ConsoleUartDmaWriter, MutexInputQueue};
 use alloc::boxed::Box;
 use aoc_pico::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
@@ -9,6 +9,7 @@ use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
+use rp2040_async::DmaIrq0Listener;
 use embed_init::{borrow, give, give_away_cell, shared_cell, take};
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{ChannelIndex, DMAExt, SingleChannel, CH0, CH1, CH2};
@@ -125,7 +126,7 @@ async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
     loop {
         let out = console.next_wait().await;
         console_writer.output(out);
-        DMA_IRQ_0_LISTENER.wait(D::id() as usize).await;
+        DMA_IRQ_0_LISTENER.wait_done(D::id() as usize).await;
     }
 }
 

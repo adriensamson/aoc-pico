@@ -13,10 +13,10 @@ dependencies = [
  "defmt-rtt",
  "embed-init",
  "embedded-alloc",
- "log",
  "myasync",
  "panic-probe",
  "rp-pico",
+ "rp2040-async",
 ]
 
 [[package]]
@@ -350,12 +350,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9afa463f5405ee81cdb9cc2baf37e08ec7e4c8209442b5d72c04cfb2cd6e6286"
 
 [[package]]
-name = "log"
-version = "0.4.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
-
-[[package]]
 name = "myasync"
 version = "0.1.0"
 
@@ -507,6 +501,14 @@ dependencies = [
  "rp2040-boot2",
  "rp2040-hal",
  "usb-device",
+]
+
+[[package]]
+name = "rp2040-async"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
+ "rp2040-pac",
 ]
 
 [[package]]
