@@ -9,8 +9,8 @@ use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
-use rp2040_async::DmaIrq0Handler;
-use embed_init::{borrow, give, give_away_cell, shared_cell, take};
+use rp2040_async::{DmaIrq0Handler, DmaIrq1Handler, TimerIrq0Handler, Uart0IrqHandler};
+use embed_init::{give, give_away_cell, take};
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{ChannelIndex, DMAExt, SingleChannel, CH0, CH1, CH2};
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
@@ -27,7 +27,7 @@ type UartPinout = (
     Pin<Gpio1, FunctionUart, PullDown>,
 );
 
-#[shared_cell]
+#[give_away_cell]
 static console_reader: ConsoleDmaReader<CH1, CH2, Alarm0, UART0, UartPinout>;
 
 #[give_away_cell]
@@ -116,7 +116,7 @@ fn main() -> ! {
     debug!("stack pointer: {:x}", read_sp());
     let console = take!(console);
     let console_writer = take!(console_writer);
-    myasync::Executor::new([Box::pin(run_console(console, console_writer))], wfi).run();
+    myasync::Executor::new([Box::pin(run_console(console, console_writer)), Box::pin(run_uart_reader())], wfi).run();
 }
 
 async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
@@ -126,37 +126,39 @@ async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
     loop {
         let out = console.next_wait().await;
         console_writer.output(out);
-        DMA_IRQ_0_LISTENER.wait_done(D::id() as usize).await;
+        DMA_IRQ_0_HANDLER.wait_done(D::id() as usize).await;
     }
 }
 
-pub static DMA_IRQ_0_LISTENER : DmaIrq0Handler = DmaIrq0Handler::new();
+async fn run_uart_reader() {
+    let console_reader = take!(console_reader);
+    console_reader.run(&UART0_IRQ_HANDLER, &TIMER_IRQ_0_HANDLER, &DMA_IRQ_1_HANDLER).await;
+}
+
+pub static DMA_IRQ_0_HANDLER: DmaIrq0Handler = DmaIrq0Handler::new();
 
 #[interrupt]
 fn DMA_IRQ_0() {
-    DMA_IRQ_0_LISTENER.on_irq();
+    DMA_IRQ_0_HANDLER.on_irq();
 }
+
+pub static DMA_IRQ_1_HANDLER: DmaIrq1Handler = DmaIrq1Handler::new();
 
 #[interrupt]
 fn DMA_IRQ_1() {
-    borrow!(console_reader, |console_reader| {
-        let _ = console_reader.dma.check_irq1();
-        let _ = console_reader.on_dma_irq();
-    });
+    DMA_IRQ_1_HANDLER.on_irq();
 }
+
+pub static UART0_IRQ_HANDLER: Uart0IrqHandler<UartPinout> = Uart0IrqHandler::new();
 
 #[interrupt]
 fn UART0_IRQ() {
-    borrow!(console_reader, |console_reader| {
-        if let Ok(len) = console_reader.read_into() {
-            if len >= 16 {
-                console_reader.start().unwrap();
-            }
-        }
-    });
+    UART0_IRQ_HANDLER.on_irq();
 }
+
+pub static TIMER_IRQ_0_HANDLER: TimerIrq0Handler = TimerIrq0Handler::new();
 
 #[interrupt]
 fn TIMER_IRQ_0() {
-    let _ = borrow!(console_reader, |console_reader| console_reader.on_alarm());
+    TIMER_IRQ_0_HANDLER.on_irq();
 }

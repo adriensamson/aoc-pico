@@ -74,11 +74,6 @@ impl<
         Ok(())
     }
 
-    pub fn check_irq1(&mut self) -> Result<bool, ()> {
-        let transfer = self.transfer.as_mut().ok_or(())?;
-        Ok(transfer.check_irq1())
-    }
-
     pub fn on_dma_irq(&mut self) -> Result<Vec<u8>, ()> {
         let transfer = self.transfer.take().ok_or(())?;
 

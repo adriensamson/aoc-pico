@@ -8,6 +8,7 @@ mod dma;
 mod memory;
 mod multicore;
 
+use alloc::boxed::Box;
 #[allow(unused_imports)]
 use defmt_rtt as _;
 #[allow(unused_imports)]
@@ -18,11 +19,12 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use aoc_pico::shell::{AsyncInputQueue, InputQueue};
 use core::cell::RefCell;
-use core::future::Future;
-use core::pin::Pin;
+use core::future::{poll_fn, Future};
+use core::pin::{Pin};
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
 use defmt::debug;
+use rp2040_async::{DmaIrq1Handler, TimerIrq0Handler, UartIrqHandler};
 use rp_pico::hal::dma::single_buffer::{Config, Transfer};
 use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget};
 use rp_pico::hal::timer::Alarm;
@@ -89,26 +91,60 @@ impl<CH1: ChannelIndex, CH2: ChannelIndex, A: Alarm, U: UartDevice, P: ValidUart
         Self { queue, dma }
     }
 
-    fn read_into(&mut self) -> Result<usize, ()> {
-        let reader = self.dma.reader().ok_or(())?;
-        self.queue.read_into(reader)
+    async fn run(&mut self, uart0irq_handler: &'static UartIrqHandler<U, P>, timer_irq0handler: &'static TimerIrq0Handler, dma_irq1handler: &'static DmaIrq1Handler) -> ! {
+        loop {
+            let mut vec = Vec::with_capacity(32);
+            let cap = vec.spare_capacity_mut();
+            let buf = unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr().cast(), cap.len()) };
+            let len = uart0irq_handler.wait_rx(self.dma.reader().unwrap(), buf).await;
+            unsafe { vec.set_len(len) };
+            self.queue.push(vec);
+            if len >= 16 {
+                'dma: loop {
+                    self.dma.start().unwrap();
+                    let dma_wait = first_future(dma_irq1handler.wait_done(CH1::id() as usize), dma_irq1handler.wait_done(CH2::id() as usize));
+                    let alarm_wait = timer_irq0handler.wait_alarm();
+                    match first_until(dma_wait, alarm_wait).await {
+                        Ok(_) => {
+                            let vec = self.dma.on_dma_irq().unwrap();
+                            self.queue.push(vec);
+                        },
+                        Err(_) => {
+                            let vec = self.dma.on_alarm_irq().unwrap();
+                            self.queue.push(vec);
+                            break 'dma;
+                        }
+                    }
+                }
+            }
+        }
     }
+}
 
-    fn start(&mut self) -> Result<(), ()> {
-        self.dma.start()
-    }
+fn first_future<T>(f1: impl Future<Output=T> + 'static, f2: impl Future<Output=T> + 'static) -> impl Future<Output = T> {
+    let (mut p1, mut p2) = (Box::pin(f1), Box::pin(f2));
+    poll_fn(move |cx| {
+        if let Poll::Ready(t) = p1.as_mut().poll(cx) {
+            Poll::Ready(t)
+        } else if let Poll::Ready(t) = p2.as_mut().poll(cx) {
+            Poll::Ready(t)
+        } else {
+            Poll::Pending
+        }
+    })
+}
 
-    fn on_dma_irq(&mut self) -> Result<(), ()> {
-        let vec = self.dma.on_dma_irq()?;
-        self.queue.push(vec);
-        Ok(())
-    }
-
-    fn on_alarm(&mut self) -> Result<(), ()> {
-        let vec = self.dma.on_alarm_irq()?;
-        self.queue.push(vec);
-        Ok(())
-    }
+fn first_until<T, U>(f1: impl Future<Output=T>, f2: impl Future<Output=U>) -> impl Future<Output = Result<T, U>> {
+    let (mut p1, mut p2) = (Box::pin(f1), Box::pin(f2));
+    poll_fn(move |cx| {
+        if let Poll::Ready(t) = p1.as_mut().poll(cx) {
+            Poll::Ready(Ok(t))
+        } else if let Poll::Ready(t) = p2.as_mut().poll(cx) {
+            Poll::Ready(Err(t))
+        } else {
+            Poll::Pending
+        }
+    })
 }
 
 pub struct MutexInputQueue(Mutex<RefCell<(VecDeque<Vec<u8>>, Option<Waker>)>>);
@@ -130,30 +166,6 @@ impl MutexInputQueue {
                 w.wake();
             }
         });
-    }
-
-    fn read_into<D: UartDevice, P: ValidUartPinout<D>>(
-        &self,
-        uart: &Reader<D, P>,
-    ) -> Result<usize, ()> {
-        let mut vec = critical_section::with(|cs| {
-            let q = &mut self.0.borrow_ref_mut(cs).0;
-            if q.back().is_some_and(|v| v.capacity() - v.len() >= 16) {
-                q.pop_back().unwrap()
-            } else {
-                Vec::with_capacity(64)
-            }
-        });
-        let cap = vec.spare_capacity_mut();
-        let buf = unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr().cast(), cap.len()) };
-        let len = uart.read_raw(buf).unwrap_or_default();
-        unsafe { vec.set_len(vec.len() + len) };
-        self.push(vec);
-        if len > 0 {
-            Ok(len)
-        } else {
-            Err(())
-        }
     }
 }
 

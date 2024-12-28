@@ -3,7 +3,6 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
-use rp2040_hal::pac::UART0;
 use rp2040_hal::uart::{Reader, UartDevice, ValidUartPinout};
 
 struct UartSlot<D: UartDevice, P: ValidUartPinout<D>> {
@@ -12,6 +11,8 @@ struct UartSlot<D: UartDevice, P: ValidUartPinout<D>> {
     buf: (*mut u8, usize),
     waker: Waker,
 }
+unsafe impl<D: UartDevice, P: ValidUartPinout<D>> Send for UartSlot<D, P> {}
+
 struct UartCell<D: UartDevice, P: ValidUartPinout<D>>(Mutex<RefCell<Option<UartSlot<D, P>>>>);
 
 impl<D: UartDevice, P: ValidUartPinout<D>> UartCell<D, P> {
@@ -75,14 +76,14 @@ impl<D: UartDevice, P: ValidUartPinout<D>> Future for UartRxFuture<'_, '_, D, P>
     }
 }
 
-pub struct Uart0IrqHandler<P: ValidUartPinout<UART0>>(UartCell<UART0, P>);
+pub struct UartIrqHandler<D: UartDevice, P: ValidUartPinout<D>>(UartCell<D, P>);
 
-impl<P: ValidUartPinout<UART0>> Uart0IrqHandler<P> {
+impl<D: UartDevice, P: ValidUartPinout<D>> UartIrqHandler<D, P> {
     pub const fn new() -> Self {
         Self(UartCell::new())
     }
 
-    pub fn wait_rx<'a>(&self, device: &'a mut Reader<UART0, P>, buf: &'a mut [u8]) -> UartRxFuture<'_, 'a, UART0, P> {
+    pub fn wait_rx<'a>(&self, device: &'a mut Reader<D, P>, buf: &'a mut [u8]) -> UartRxFuture<'_, 'a, D, P> {
         UartRxFuture(&self.0, device, buf)
     }
 
