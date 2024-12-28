@@ -9,7 +9,7 @@ use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
-use rp2040_async::DmaIrq0Listener;
+use rp2040_async::DmaIrq0Handler;
 use embed_init::{borrow, give, give_away_cell, shared_cell, take};
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{ChannelIndex, DMAExt, SingleChannel, CH0, CH1, CH2};
@@ -130,7 +130,7 @@ async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
     }
 }
 
-pub static DMA_IRQ_0_LISTENER : DmaIrq0Listener = DmaIrq0Listener::new();
+pub static DMA_IRQ_0_LISTENER : DmaIrq0Handler = DmaIrq0Handler::new();
 
 #[interrupt]
 fn DMA_IRQ_0() {

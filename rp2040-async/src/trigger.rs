@@ -5,12 +5,12 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
 
-pub(crate) struct WakerSlot {
+pub(crate) struct TriggerSlot {
     triggered: bool,
     waker: Option<Waker>
 }
 
-impl WakerSlot {
+impl TriggerSlot {
     pub(crate) const fn new() -> Self {
         Self {
             triggered: false,
@@ -45,21 +45,21 @@ impl WakerSlot {
     }
 }
 
-pub(crate) struct WakerCell(pub(crate) Mutex<RefCell<WakerSlot>>);
+pub(crate) struct TriggerCell(pub(crate) Mutex<RefCell<TriggerSlot>>);
 
-impl WakerCell {
+impl TriggerCell {
     pub const fn new() -> Self {
-        Self(Mutex::new(RefCell::new(WakerSlot::new())))
+        Self(Mutex::new(RefCell::new(TriggerSlot::new())))
     }
 
-    pub fn as_future(&self) -> WakerFuture {
-        WakerFuture(self)
+    pub fn as_future(&self) -> TriggerFuture {
+        TriggerFuture(self)
     }
 }
 
-pub struct WakerFuture<'a>(&'a WakerCell);
+pub struct TriggerFuture<'a>(&'a TriggerCell);
 
-impl Future for WakerFuture<'_> {
+impl Future for TriggerFuture<'_> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

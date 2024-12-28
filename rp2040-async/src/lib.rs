@@ -1,8 +1,11 @@
 #![no_std]
 extern crate alloc;
 
-mod waker_slot;
+mod trigger;
 mod dma;
+mod timer;
+mod uart;
 
-pub use dma::DmaIrq0Listener;
-pub use dma::DmaIrq1Listener;
+pub use dma::DmaIrq0Handler;
+pub use dma::DmaIrq1Handler;
+pub use timer::TimerIrq0Handler;

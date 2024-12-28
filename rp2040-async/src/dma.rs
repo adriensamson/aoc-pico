@@ -1,13 +1,13 @@
-use crate::waker_slot::{WakerCell, WakerFuture};
+use crate::trigger::{TriggerCell, TriggerFuture};
 
-pub struct DmaIrq0Listener([WakerCell; 12]);
+pub struct DmaIrq0Handler([TriggerCell; 12]);
 
-impl DmaIrq0Listener {
+impl DmaIrq0Handler {
     pub const fn new() -> Self {
-        Self([const { WakerCell::new() }; 12])
+        Self([const { TriggerCell::new() }; 12])
     }
 
-    pub fn wait_done(&self, channel: usize) -> WakerFuture {
+    pub fn wait_done(&self, channel: usize) -> TriggerFuture {
         self.0[channel].as_future()
     }
 
@@ -26,14 +26,14 @@ impl DmaIrq0Listener {
 }
 
 
-pub struct DmaIrq1Listener([WakerCell; 12]);
+pub struct DmaIrq1Handler([TriggerCell; 12]);
 
-impl DmaIrq1Listener {
+impl DmaIrq1Handler {
     pub const fn new() -> Self {
-        Self([const { WakerCell::new() }; 12])
+        Self([const { TriggerCell::new() }; 12])
     }
 
-    pub fn wait_done(&self, channel: usize) -> WakerFuture {
+    pub fn wait_done(&self, channel: usize) -> TriggerFuture {
         self.0[channel].as_future()
     }
 
