@@ -25,6 +25,7 @@ impl<Idle: Fn(), const N: usize> Executor<Idle, N> {
                 match task.state {
                     TaskState::Finished | TaskState::Waiting => {},
                     TaskState::NotStarted | TaskState::Awakened => {
+                        task.state = TaskState::Waiting;
                         let waker = task.waker();
                         let mut ctx = Context::from_waker(&waker);
                         let fut = task.future.as_mut();
@@ -32,14 +33,14 @@ impl<Idle: Fn(), const N: usize> Executor<Idle, N> {
                             Poll::Ready(()) => {
                                 task.state = TaskState::Finished;
                             },
-                            Poll::Pending => {
-                                task.state = TaskState::Waiting;
-                            }
+                            Poll::Pending => {}
                         }
                     },
                 }
             }
-            (self.idle)();
+            if self.tasks.iter().all(|t| matches!(t.state, TaskState::Finished | TaskState::Waiting)) {
+                (self.idle)();
+            }
         }
     }
 }
@@ -66,7 +67,7 @@ impl Task {
     }
 
     fn waker(&self) -> Waker {
-        let data = (&raw const self).cast();
+        let data = (&raw const *self).cast();
         unsafe { Waker::from_raw(RawWaker::new(data, &RAW_WAKER_VTABLE)) }
     }
 }

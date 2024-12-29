@@ -17,15 +17,15 @@ use panic_probe as _;
 use crate::dma::DoubleChannelReader;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use aoc_pico::shell::{AsyncInputQueue, InputQueue};
+use aoc_pico::shell::{AsyncInputQueue, Console, InputParser, InputQueue};
 use core::cell::RefCell;
 use core::future::{poll_fn, Future};
-use core::pin::{Pin};
+use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
 use defmt::debug;
-use rp2040_async::{DmaIrq1Handler, TimerIrq0Handler, UartIrqHandler};
-use rp_pico::hal::dma::single_buffer::{Config, Transfer};
+use rp2040_async::{DmaIrq0Handler, DmaIrq1Handler, TimerIrq0Handler, UartIrqHandler};
+use rp_pico::hal::dma::single_buffer::Config;
 use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget};
 use rp_pico::hal::timer::Alarm;
 use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout, Writer};
@@ -45,28 +45,6 @@ unsafe impl ReadTarget for VecReadTarget {
 
     fn rx_increment(&self) -> bool {
         true
-    }
-}
-
-enum ConsoleUartDmaWriter<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> {
-    Ready(Writer<U, P>, Channel<D>),
-    Transferring(Transfer<Channel<D>, VecReadTarget, Writer<U, P>>),
-    Poisoned,
-}
-
-impl<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>> ConsoleUartDmaWriter<D, U, P> {
-    fn output(&mut self, line: Vec<u8>) {
-        match core::mem::replace(self, Self::Poisoned) {
-            Self::Ready(writer, ch) => {
-                *self = Self::Transferring(Config::new(ch, VecReadTarget(line), writer).start())
-            }
-            Self::Transferring(transfer) => {
-                let (ch, _, writer) = transfer.wait();
-                *self = Self::Ready(writer, ch);
-                self.output(line);
-            }
-            Self::Poisoned => unreachable!(),
-        }
     }
 }
 
@@ -98,22 +76,29 @@ impl<CH1: ChannelIndex, CH2: ChannelIndex, A: Alarm, U: UartDevice, P: ValidUart
             let buf = unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr().cast(), cap.len()) };
             let len = uart0irq_handler.wait_rx(self.dma.reader().unwrap(), buf).await;
             unsafe { vec.set_len(len) };
+            debug!("uart read {=[u8]:X} bytes", vec);
             self.queue.push(vec);
-            if len >= 16 {
-                'dma: loop {
-                    self.dma.start().unwrap();
-                    let dma_wait = first_future(dma_irq1handler.wait_done(CH1::id() as usize), dma_irq1handler.wait_done(CH2::id() as usize));
-                    let alarm_wait = timer_irq0handler.wait_alarm();
-                    match first_until(dma_wait, alarm_wait).await {
-                        Ok(_) => {
-                            let vec = self.dma.on_dma_irq().unwrap();
-                            self.queue.push(vec);
-                        },
-                        Err(_) => {
-                            let vec = self.dma.on_alarm_irq().unwrap();
-                            self.queue.push(vec);
-                            break 'dma;
-                        }
+            if len < 16 {
+                continue;
+            }
+            debug!("start dma");
+            self.dma.start().unwrap();
+            'dma: loop {
+                let dma_wait = first_future(dma_irq1handler.wait_done(CH1::id() as usize), dma_irq1handler.wait_done(CH2::id() as usize));
+                let alarm_wait = timer_irq0handler.wait_alarm();
+                match first_until(dma_wait, alarm_wait).await {
+                    Ok(_) => {
+                        debug!("dma irq first");
+                        let vec = self.dma.on_dma_irq().unwrap();
+                        debug!("dma read {=[u8]:X} bytes", vec);
+                        self.queue.push(vec);
+                    },
+                    Err(_) => {
+                        debug!("alarm irq first");
+                        let vec = self.dma.on_alarm_irq().unwrap();
+                        debug!("dma alarm read {=[u8]:X} bytes", vec);
+                        self.queue.push(vec);
+                        break 'dma;
                     }
                 }
             }
@@ -194,5 +179,19 @@ impl Future for MutexInputQueueWaiter<'_> {
             self.0 .0.borrow_ref_mut(cs).1.replace(cx.waker().clone());
         });
         Poll::Pending
+    }
+}
+
+async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
+    mut console: Console<InputParser<&'static MutexInputQueue>>,
+    mut writer: Writer<U, P>,
+    mut ch: Channel<D>,
+    dma_irq0handler: &'static DmaIrq0Handler,
+) {
+    loop {
+        let out = console.next_wait().await;
+        let transfer = Config::new(ch, VecReadTarget(out), writer).start();
+        dma_irq0handler.wait_done(D::id() as usize).await;
+        (ch, _, writer) = transfer.wait();
     }
 }

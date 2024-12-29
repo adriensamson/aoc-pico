@@ -75,3 +75,13 @@ impl Future for TriggerFuture<'_> {
         })
     }
 }
+
+impl Drop for TriggerFuture<'_> {
+    fn drop(&mut self) {
+        critical_section::with(|cs| {
+            let mut slot = self.0.0.borrow_ref_mut(cs);
+            slot.check_triggered();
+            slot.unregister();
+        })
+    }
+}

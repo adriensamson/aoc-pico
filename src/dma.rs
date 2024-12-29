@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::ptr::write_volatile;
 use rp_pico::hal::dma::double_buffer::{Config, Transfer, WriteNext};
 use rp_pico::hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
@@ -92,16 +93,32 @@ impl<
 
         self.alarm.disable_interrupt();
 
-        // pause
         let dma = unsafe { rp_pico::pac::DMA::steal() };
         let dma_ch1 = dma.ch(CH1::id() as usize);
         let dma_ch2 = dma.ch(CH2::id() as usize);
+
+        let mask = 1 << CH1::id() | 1 << CH2::id();
+
+        // disable (spurious) interrupts
+        let inte0_mask = dma.inte0().read().bits() & mask;
+        let inte1_mask = dma.inte1().read().bits() & mask;
+        if inte0_mask != 0 {
+            unsafe { write_volatile(dma.inte0().as_ptr().byte_add(0x3000), inte0_mask) };
+        }
+        if inte1_mask != 0 {
+            unsafe { write_volatile(dma.inte1().as_ptr().byte_add(0x3000), inte1_mask) };
+        }
+
+        // pause
         dma_ch1.ch_ctrl_trig().write(|w| w.en().clear_bit());
         dma_ch2.ch_ctrl_trig().write(|w| w.en().clear_bit());
+        // read transcount
         let transcount1 = dma_ch1.ch_trans_count().read().bits() as usize;
         let transcount2 = dma_ch2.ch_trans_count().read().bits() as usize;
+        let transcount = if transcount1 > 0 { transcount1 } else { transcount2 };
+        // abort
         let chan_abort = dma.chan_abort();
-        unsafe { chan_abort.write(|w| w.bits(1 << CH1::id() | 1 << CH2::id())) };
+        unsafe { chan_abort.write(|w| w.bits(mask)) };
         while chan_abort.read().bits() != 0 {}
 
         let (target, transfer) = transfer.wait();
@@ -110,10 +127,18 @@ impl<
         ch1.check_irq1();
         ch2.check_irq0();
         ch2.check_irq1();
+
+        if inte0_mask != 0 {
+            unsafe { write_volatile(dma.inte0().as_ptr().byte_add(0x2000), inte0_mask) };
+        }
+        if inte1_mask != 0 {
+            unsafe { write_volatile(dma.inte1().as_ptr().byte_add(0x2000), inte1_mask) };
+        }
+
         self.elements = Some((ch1, ch2, read));
 
         let mut vec = target.0;
-        unsafe { vec.set_len(N - transcount1.min(transcount2)) };
+        unsafe { vec.set_len(N - transcount) };
         Ok(vec)
     }
 }

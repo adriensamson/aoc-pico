@@ -1,8 +1,9 @@
 use crate::dma::DoubleChannelReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
-use crate::{ConsoleDmaReader, ConsoleUartDmaWriter, MutexInputQueue};
+use crate::{ConsoleDmaReader, MutexInputQueue};
 use alloc::boxed::Box;
+use core::future::Future;
 use aoc_pico::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
 use cortex_m::asm::wfi;
@@ -12,11 +13,11 @@ use defmt::debug;
 use rp2040_async::{DmaIrq0Handler, DmaIrq1Handler, TimerIrq0Handler, Uart0IrqHandler};
 use embed_init::{give, give_away_cell, take};
 use rp_pico::hal::clocks::init_clocks_and_plls;
-use rp_pico::hal::dma::{ChannelIndex, DMAExt, SingleChannel, CH0, CH1, CH2};
+use rp_pico::hal::dma::{DMAExt, SingleChannel, CH1, CH2};
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
 use rp_pico::hal::gpio::{FunctionUart, PullDown};
 use rp_pico::hal::timer::Alarm0;
-use rp_pico::hal::uart::{UartConfig, UartDevice, UartPeripheral, ValidUartPinout};
+use rp_pico::hal::uart::{UartConfig, UartPeripheral};
 use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Timer, Watchdog};
 use rp_pico::pac::UART0;
 use rp_pico::pac::{interrupt, Interrupt};
@@ -30,14 +31,9 @@ type UartPinout = (
 #[give_away_cell]
 static console_reader: ConsoleDmaReader<CH1, CH2, Alarm0, UART0, UartPinout>;
 
-#[give_away_cell]
-static console: Console<InputParser<&'static MutexInputQueue>>;
-#[give_away_cell]
-static console_writer: ConsoleUartDmaWriter<CH0, UART0, UartPinout>;
-
 #[rp_pico::entry]
 fn entry() -> ! {
-    init();
+    let futures = init();
 
     unsafe {
         NVIC::unmask(Interrupt::DMA_IRQ_0);
@@ -46,10 +42,11 @@ fn entry() -> ! {
         NVIC::unmask(Interrupt::TIMER_IRQ_0);
     }
 
-    main()
+    debug!("stack pointer: {:x}", read_sp());
+    myasync::Executor::new(futures, wfi).run()
 }
 
-fn init() {
+fn init() -> [core::pin::Pin<Box<dyn Future<Output=()>>>; 2] {
     debug!("init");
     unsafe { init_heap() };
     install_core0_stack_guard();
@@ -94,12 +91,11 @@ fn init() {
     commands.add("aoc", multicore_runner);
 
     let console_input = singleton!(: MutexInputQueue = MutexInputQueue::new()).unwrap();
-    give!(console = Console::new(InputParser::new(&*console_input), commands));
+    let console = Console::new(InputParser::new(&*console_input), commands);
     uart_rx.enable_rx_interrupt();
 
     let mut dma_chans = pac.DMA.split(&mut pac.RESETS);
     dma_chans.ch0.enable_irq0();
-    give!(console_writer = ConsoleUartDmaWriter::Ready(uart_tx, dma_chans.ch0));
 
     dma_chans.ch1.enable_irq1();
     dma_chans.ch2.enable_irq1();
@@ -110,24 +106,11 @@ fn init() {
         uart_rx,
     );
     give!(console_reader = ConsoleDmaReader::new(&*console_input, double_dma));
-}
 
-fn main() -> ! {
-    debug!("stack pointer: {:x}", read_sp());
-    let console = take!(console);
-    let console_writer = take!(console_writer);
-    myasync::Executor::new([Box::pin(run_console(console, console_writer)), Box::pin(run_uart_reader())], wfi).run();
-}
-
-async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
-    console: &mut Console<InputParser<&'static MutexInputQueue>>,
-    console_writer: &mut ConsoleUartDmaWriter<D, U, P>,
-) {
-    loop {
-        let out = console.next_wait().await;
-        console_writer.output(out);
-        DMA_IRQ_0_HANDLER.wait_done(D::id() as usize).await;
-    }
+    [
+        Box::pin(crate::run_console(console, uart_tx, dma_chans.ch0, &DMA_IRQ_0_HANDLER)),
+        Box::pin(run_uart_reader()),
+    ]
 }
 
 async fn run_uart_reader() {
