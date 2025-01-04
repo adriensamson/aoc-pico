@@ -11,15 +11,12 @@ use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
 use rp2040_async::{DmaIrq0Handler, DmaIrq1Handler, TimerIrq0Handler, Uart0IrqHandler};
-use embed_init::{give, give_away_cell, take};
 use rp_pico::hal::clocks::init_clocks_and_plls;
-use rp_pico::hal::dma::{DMAExt, SingleChannel, CH1, CH2};
+use rp_pico::hal::dma::{DMAExt, SingleChannel};
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
 use rp_pico::hal::gpio::{FunctionUart, PullDown};
-use rp_pico::hal::timer::Alarm0;
 use rp_pico::hal::uart::{UartConfig, UartPeripheral};
 use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Timer, Watchdog};
-use rp_pico::pac::UART0;
 use rp_pico::pac::{interrupt, Interrupt};
 use rp_pico::XOSC_CRYSTAL_FREQ;
 
@@ -27,9 +24,6 @@ type UartPinout = (
     Pin<Gpio0, FunctionUart, PullDown>,
     Pin<Gpio1, FunctionUart, PullDown>,
 );
-
-#[give_away_cell]
-static console_reader: ConsoleDmaReader<CH1, CH2, Alarm0, UART0, UartPinout>;
 
 #[rp_pico::entry]
 fn entry() -> ! {
@@ -105,17 +99,12 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output=()>>>; 2] {
         timer.alarm_0().unwrap(),
         uart_rx,
     );
-    give!(console_reader = ConsoleDmaReader::new(&*console_input, double_dma));
+    let mut console_reader = ConsoleDmaReader::new(&*console_input, double_dma);
 
     [
         Box::pin(crate::run_console(console, uart_tx, dma_chans.ch0, &DMA_IRQ_0_HANDLER)),
-        Box::pin(run_uart_reader()),
+        Box::pin(console_reader.run(&UART0_IRQ_HANDLER, &TIMER_IRQ_0_HANDLER, &DMA_IRQ_1_HANDLER)),
     ]
-}
-
-async fn run_uart_reader() {
-    let console_reader = take!(console_reader);
-    console_reader.run(&UART0_IRQ_HANDLER, &TIMER_IRQ_0_HANDLER, &DMA_IRQ_1_HANDLER).await;
 }
 
 pub static DMA_IRQ_0_HANDLER: DmaIrq0Handler = DmaIrq0Handler::new();
