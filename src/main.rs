@@ -8,27 +8,24 @@ mod dma;
 mod memory;
 mod multicore;
 
-use alloc::boxed::Box;
 #[allow(unused_imports)]
 use defmt_rtt as _;
 #[allow(unused_imports)]
 use panic_probe as _;
 
-use crate::dma::DoubleChannelReader;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use aoc_pico::shell::{AsyncInputQueue, Console, InputParser, InputQueue};
 use core::cell::RefCell;
-use core::future::{poll_fn, Future};
+use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
 use defmt::debug;
-use rp2040_async::{DmaIrq0Handler, DmaIrq1Handler, TimerIrq0Handler, UartIrqHandler};
+use rp2040_async::DmaIrq0Handler;
 use rp_pico::hal::dma::single_buffer::Config;
 use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget};
-use rp_pico::hal::timer::Alarm;
-use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout, Writer};
+use rp_pico::hal::uart::{UartDevice, ValidUartPinout, Writer};
 
 struct VecReadTarget(Vec<u8>);
 
@@ -46,90 +43,6 @@ unsafe impl ReadTarget for VecReadTarget {
     fn rx_increment(&self) -> bool {
         true
     }
-}
-
-pub struct ConsoleDmaReader<
-    CH1: ChannelIndex,
-    CH2: ChannelIndex,
-    A: Alarm,
-    U: UartDevice,
-    P: ValidUartPinout<U>,
-> {
-    queue: &'static MutexInputQueue,
-    dma: DoubleChannelReader<CH1, CH2, A, Reader<U, P>, 512>,
-}
-
-impl<CH1: ChannelIndex, CH2: ChannelIndex, A: Alarm, U: UartDevice, P: ValidUartPinout<U>>
-    ConsoleDmaReader<CH1, CH2, A, U, P>
-{
-    fn new(
-        queue: &'static MutexInputQueue,
-        dma: DoubleChannelReader<CH1, CH2, A, Reader<U, P>, 512>,
-    ) -> Self {
-        Self { queue, dma }
-    }
-
-    async fn run(&mut self, uart0irq_handler: &'static UartIrqHandler<U, P>, timer_irq0handler: &'static TimerIrq0Handler, dma_irq1handler: &'static DmaIrq1Handler) -> ! {
-        loop {
-            let mut vec = Vec::with_capacity(32);
-            let cap = vec.spare_capacity_mut();
-            let buf = unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr().cast(), cap.len()) };
-            let len = uart0irq_handler.wait_rx(self.dma.reader().unwrap(), buf).await;
-            unsafe { vec.set_len(len) };
-            debug!("uart read {=[u8]:X} bytes", vec);
-            self.queue.push(vec);
-            if len < 16 {
-                continue;
-            }
-            debug!("start dma");
-            self.dma.start().unwrap();
-            'dma: loop {
-                let dma_wait = first_future(dma_irq1handler.wait_done(CH1::id() as usize), dma_irq1handler.wait_done(CH2::id() as usize));
-                let alarm_wait = timer_irq0handler.wait_alarm();
-                match first_until(dma_wait, alarm_wait).await {
-                    Ok(_) => {
-                        debug!("dma irq first");
-                        let vec = self.dma.on_dma_irq().unwrap();
-                        debug!("dma read {=[u8]:X} bytes", vec);
-                        self.queue.push(vec);
-                    },
-                    Err(_) => {
-                        debug!("alarm irq first");
-                        let vec = self.dma.on_alarm_irq().unwrap();
-                        debug!("dma alarm read {=[u8]:X} bytes", vec);
-                        self.queue.push(vec);
-                        break 'dma;
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn first_future<T>(f1: impl Future<Output=T> + 'static, f2: impl Future<Output=T> + 'static) -> impl Future<Output = T> {
-    let (mut p1, mut p2) = (Box::pin(f1), Box::pin(f2));
-    poll_fn(move |cx| {
-        if let Poll::Ready(t) = p1.as_mut().poll(cx) {
-            Poll::Ready(t)
-        } else if let Poll::Ready(t) = p2.as_mut().poll(cx) {
-            Poll::Ready(t)
-        } else {
-            Poll::Pending
-        }
-    })
-}
-
-fn first_until<T, U>(f1: impl Future<Output=T>, f2: impl Future<Output=U>) -> impl Future<Output = Result<T, U>> {
-    let (mut p1, mut p2) = (Box::pin(f1), Box::pin(f2));
-    poll_fn(move |cx| {
-        if let Poll::Ready(t) = p1.as_mut().poll(cx) {
-            Poll::Ready(Ok(t))
-        } else if let Poll::Ready(t) = p2.as_mut().poll(cx) {
-            Poll::Ready(Err(t))
-        } else {
-            Poll::Pending
-        }
-    })
 }
 
 pub struct MutexInputQueue(Mutex<RefCell<(VecDeque<Vec<u8>>, Option<Waker>)>>);

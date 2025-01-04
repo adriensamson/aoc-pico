@@ -1,11 +1,11 @@
 use crate::dma::DoubleChannelReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
-use crate::{ConsoleDmaReader, MutexInputQueue};
+use crate::MutexInputQueue;
 use alloc::boxed::Box;
-use core::future::Future;
 use aoc_pico::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
+use core::future::Future;
 use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
@@ -40,7 +40,7 @@ fn entry() -> ! {
     myasync::Executor::new(futures, wfi).run()
 }
 
-fn init() -> [core::pin::Pin<Box<dyn Future<Output=()>>>; 2] {
+fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
     debug!("init");
     unsafe { init_heap() };
     install_core0_stack_guard();
@@ -93,17 +93,22 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output=()>>>; 2] {
 
     dma_chans.ch1.enable_irq1();
     dma_chans.ch2.enable_irq1();
-    let double_dma = DoubleChannelReader::new(
+    let double_dma = DoubleChannelReader::<_, _, _, _, _, 512>::new(
         dma_chans.ch1,
         dma_chans.ch2,
         timer.alarm_0().unwrap(),
         uart_rx,
+        |v| console_input.push(v),
     );
-    let mut console_reader = ConsoleDmaReader::new(&*console_input, double_dma);
 
     [
-        Box::pin(crate::run_console(console, uart_tx, dma_chans.ch0, &DMA_IRQ_0_HANDLER)),
-        Box::pin(console_reader.run(&UART0_IRQ_HANDLER, &TIMER_IRQ_0_HANDLER, &DMA_IRQ_1_HANDLER)),
+        Box::pin(crate::run_console(
+            console,
+            uart_tx,
+            dma_chans.ch0,
+            &DMA_IRQ_0_HANDLER,
+        )),
+        Box::pin(double_dma.run(&UART0_IRQ_HANDLER, &TIMER_IRQ_0_HANDLER, &DMA_IRQ_1_HANDLER)),
     ]
 }
 
