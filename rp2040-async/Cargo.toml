@@ -11,3 +11,6 @@ embedded-hal-async = "1.0.0"
 
 [features]
 alarm0 = []
+alarm1 = []
+alarm2 = []
+alarm3 = []
