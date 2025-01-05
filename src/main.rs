@@ -22,7 +22,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
 use defmt::debug;
-use rp2040_async::DmaIrq0Handler;
+use rp2040_async::dma::{DmaIrq0, DmaIrqHandler};
 use rp_pico::hal::dma::single_buffer::Config;
 use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget};
 use rp_pico::hal::uart::{UartDevice, ValidUartPinout, Writer};
@@ -99,12 +99,12 @@ async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
     mut console: Console<InputParser<&'static MutexInputQueue>>,
     mut writer: Writer<U, P>,
     mut ch: Channel<D>,
-    dma_irq0handler: &'static DmaIrq0Handler,
+    dma_irq0handler: &'static DmaIrqHandler<DmaIrq0>,
 ) {
     loop {
         let out = console.next_wait().await;
         let transfer = Config::new(ch, VecReadTarget(out), writer).start();
-        dma_irq0handler.wait_done(D::id() as usize).await;
+        unsafe { dma_irq0handler.wait_done(D::id()) }.await;
         (ch, _, writer) = transfer.wait();
     }
 }

@@ -10,15 +10,18 @@ use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
-use rp2040_async::{AsyncAlarm, DmaIrq0Handler, DmaIrq1Handler, Uart0IrqHandler};
+use rp2040_async::timer::AsyncAlarm;
+use rp2040_async::uart::UartIrqHandler;
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{DMAExt, SingleChannel};
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
 use rp_pico::hal::gpio::{FunctionUart, PullDown};
 use rp_pico::hal::uart::{UartConfig, UartPeripheral};
 use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Timer, Watchdog};
-use rp_pico::pac::{interrupt, Interrupt};
+use rp_pico::pac::{interrupt, Interrupt, UART0};
 use rp_pico::XOSC_CRYSTAL_FREQ;
+use rp2040_async::dma::dma0::DMA_IRQ_0_HANDLER;
+use rp2040_async::dma::dma1::DMA_IRQ_1_HANDLER;
 
 type UartPinout = (
     Pin<Gpio0, FunctionUart, PullDown>,
@@ -112,21 +115,7 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
     ]
 }
 
-pub static DMA_IRQ_0_HANDLER: DmaIrq0Handler = DmaIrq0Handler::new();
-
-#[interrupt]
-fn DMA_IRQ_0() {
-    DMA_IRQ_0_HANDLER.on_irq();
-}
-
-pub static DMA_IRQ_1_HANDLER: DmaIrq1Handler = DmaIrq1Handler::new();
-
-#[interrupt]
-fn DMA_IRQ_1() {
-    DMA_IRQ_1_HANDLER.on_irq();
-}
-
-pub static UART0_IRQ_HANDLER: Uart0IrqHandler<UartPinout> = Uart0IrqHandler::new();
+pub static UART0_IRQ_HANDLER: UartIrqHandler<UART0, UartPinout> = UartIrqHandler::new();
 
 #[interrupt]
 fn UART0_IRQ() {

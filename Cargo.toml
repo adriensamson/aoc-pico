@@ -15,7 +15,7 @@ embedded-alloc = "0.6.0"
 embedded-hal-async = "1.0.0"
 
 myasync = {path = "./myasync"}
-rp2040-async = {path = "./rp2040-async", features = ["alarm0"]}
+rp2040-async = {path = "./rp2040-async", features = ["alarm0", "dma0", "dma1"]}
 
 [patch.crates-io]
 rp2040-hal = { path = "../rp-hal/rp2040-hal" }

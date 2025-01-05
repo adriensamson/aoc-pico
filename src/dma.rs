@@ -5,7 +5,8 @@ use core::ptr::write_volatile;
 use core::task::Poll;
 use defmt::debug;
 use embedded_hal_async::delay::DelayNs;
-use rp2040_async::{DmaIrq1Handler, UartIrqHandler};
+use rp2040_async::dma::{DmaIrq1, DmaIrqHandler};
+use rp2040_async::uart::UartIrqHandler;
 use rp_pico::hal::dma::double_buffer::{Config, Transfer, WriteNext};
 use rp_pico::hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
@@ -84,7 +85,7 @@ impl<
     pub async fn run(
         self,
         uart0irq_handler: &'static UartIrqHandler<U, P>,
-        dma_irq1handler: &'static DmaIrq1Handler,
+        dma_irq1handler: &'static DmaIrqHandler<DmaIrq1>,
     ) {
         let Self {
             mut alarm,
@@ -116,8 +117,8 @@ impl<
             let mut alarm_wait = alarm.delay_ms(100);
             (channel1, channel2, from) = 'dma: loop {
                 let dma_wait = first_future(
-                    dma_irq1handler.wait_done(CH1::id() as usize),
-                    dma_irq1handler.wait_done(CH2::id() as usize),
+                    unsafe { dma_irq1handler.wait_done(CH1::id()) },
+                    unsafe { dma_irq1handler.wait_done(CH2::id()) },
                 );
                 match first_until(dma_wait, alarm_wait).await {
                     Ok(_) => {
