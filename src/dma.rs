@@ -4,13 +4,12 @@ use core::future::{poll_fn, Future};
 use core::ptr::write_volatile;
 use core::task::Poll;
 use defmt::debug;
-use rp2040_async::{DmaIrq1Handler, TimerIrq0Handler, UartIrqHandler};
+use embedded_hal_async::delay::DelayNs;
+use rp2040_async::{DmaIrq1Handler, UartIrqHandler};
 use rp_pico::hal::dma::double_buffer::{Config, Transfer, WriteNext};
 use rp_pico::hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
 };
-use rp_pico::hal::fugit::ExtU32;
-use rp_pico::hal::timer::Alarm;
 use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout};
 
 struct VecCapWriteTarget(Vec<u8>);
@@ -35,7 +34,7 @@ unsafe impl WriteTarget for VecCapWriteTarget {
 pub struct DoubleChannelReader<
     CH1: ChannelIndex,
     CH2: ChannelIndex,
-    ALARM: Alarm,
+    ALARM: DelayNs,
     FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
     F: Fn(Vec<u8>),
     const N: usize,
@@ -50,7 +49,7 @@ pub struct DoubleChannelReader<
 impl<
         CH1: ChannelIndex,
         CH2: ChannelIndex,
-        ALARM: Alarm,
+        ALARM: DelayNs,
         FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
         F: Fn(Vec<u8>),
         const N: usize,
@@ -75,7 +74,7 @@ impl<
 impl<
         CH1: ChannelIndex,
         CH2: ChannelIndex,
-        ALARM: Alarm,
+        ALARM: DelayNs,
         U: UartDevice,
         P: ValidUartPinout<U>,
         F: Fn(Vec<u8>),
@@ -85,7 +84,6 @@ impl<
     pub async fn run(
         self,
         uart0irq_handler: &'static UartIrqHandler<U, P>,
-        timer_irq0handler: &'static TimerIrq0Handler,
         dma_irq1handler: &'static DmaIrq1Handler,
     ) {
         let Self {
@@ -115,18 +113,16 @@ impl<
             )
             .start()
             .write_next(VecCapWriteTarget(Vec::with_capacity(N)));
-            alarm.schedule(100.millis()).unwrap();
-            alarm.enable_interrupt();
+            let mut alarm_wait = alarm.delay_ms(100);
             (channel1, channel2, from) = 'dma: loop {
                 let dma_wait = first_future(
                     dma_irq1handler.wait_done(CH1::id() as usize),
                     dma_irq1handler.wait_done(CH2::id() as usize),
                 );
-                let alarm_wait = timer_irq0handler.wait_alarm();
                 match first_until(dma_wait, alarm_wait).await {
                     Ok(_) => {
                         debug!("dma irq first");
-                        alarm.schedule(100.millis()).unwrap();
+                        alarm_wait = alarm.delay_ms(100);
                         let (target, transfer2) = transfer.wait();
                         transfer = transfer2.write_next(VecCapWriteTarget(Vec::with_capacity(N)));
                         let mut vec = target.0;
@@ -136,8 +132,6 @@ impl<
                     }
                     Err(_) => {
                         debug!("alarm irq first");
-                        alarm.disable_interrupt();
-
                         let (ch1, ch2, from, vec) = abort(transfer, N);
                         debug!("dma alarm read {=[u8]:X} bytes", vec);
                         on_data(vec);

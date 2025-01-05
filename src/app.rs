@@ -10,7 +10,7 @@ use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
-use rp2040_async::{DmaIrq0Handler, DmaIrq1Handler, TimerIrq0Handler, Uart0IrqHandler};
+use rp2040_async::{AsyncAlarm, DmaIrq0Handler, DmaIrq1Handler, Uart0IrqHandler};
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{DMAExt, SingleChannel};
 use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
@@ -96,7 +96,7 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
     let double_dma = DoubleChannelReader::<_, _, _, _, _, 512>::new(
         dma_chans.ch1,
         dma_chans.ch2,
-        timer.alarm_0().unwrap(),
+        AsyncAlarm::new(timer.alarm_0().unwrap()),
         uart_rx,
         |v| console_input.push(v),
     );
@@ -108,7 +108,7 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
             dma_chans.ch0,
             &DMA_IRQ_0_HANDLER,
         )),
-        Box::pin(double_dma.run(&UART0_IRQ_HANDLER, &TIMER_IRQ_0_HANDLER, &DMA_IRQ_1_HANDLER)),
+        Box::pin(double_dma.run(&UART0_IRQ_HANDLER, &DMA_IRQ_1_HANDLER)),
     ]
 }
 
@@ -131,11 +131,4 @@ pub static UART0_IRQ_HANDLER: Uart0IrqHandler<UartPinout> = Uart0IrqHandler::new
 #[interrupt]
 fn UART0_IRQ() {
     UART0_IRQ_HANDLER.on_irq();
-}
-
-pub static TIMER_IRQ_0_HANDLER: TimerIrq0Handler = TimerIrq0Handler::new();
-
-#[interrupt]
-fn TIMER_IRQ_0() {
-    TIMER_IRQ_0_HANDLER.on_irq();
 }

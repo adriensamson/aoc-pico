@@ -298,6 +298,7 @@ name = "rp2040-async"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "embedded-hal-async",
  "rp2040-hal",
 ]
 
