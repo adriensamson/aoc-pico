@@ -10,23 +10,16 @@ use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
-use rp2040_async::timer::AsyncAlarm;
-use rp2040_async::uart::UartIrqHandler;
-use rp_pico::hal::clocks::init_clocks_and_plls;
-use rp_pico::hal::dma::{DMAExt, SingleChannel};
-use rp_pico::hal::gpio::bank0::{Gpio0, Gpio1};
-use rp_pico::hal::gpio::{FunctionUart, PullDown};
-use rp_pico::hal::uart::{UartConfig, UartPeripheral};
-use rp_pico::hal::{gpio::Pin, gpio::Pins, Clock, Sio, Timer, Watchdog};
-use rp_pico::pac::{interrupt, Interrupt, UART0};
-use rp_pico::XOSC_CRYSTAL_FREQ;
 use rp2040_async::dma::dma0::DMA_IRQ_0_HANDLER;
 use rp2040_async::dma::dma1::DMA_IRQ_1_HANDLER;
-
-type UartPinout = (
-    Pin<Gpio0, FunctionUart, PullDown>,
-    Pin<Gpio1, FunctionUart, PullDown>,
-);
+use rp2040_async::timer::AsyncAlarm;
+use rp2040_async::uart::uart0::UART0_IRQ_HANDLER;
+use rp_pico::hal::clocks::init_clocks_and_plls;
+use rp_pico::hal::dma::{DMAExt, SingleChannel};
+use rp_pico::hal::uart::{UartConfig, UartPeripheral};
+use rp_pico::hal::{gpio::Pins, Clock, Sio, Timer, Watchdog};
+use rp_pico::pac::Interrupt;
+use rp_pico::XOSC_CRYSTAL_FREQ;
 
 #[rp_pico::entry]
 fn entry() -> ! {
@@ -113,11 +106,4 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
         )),
         Box::pin(double_dma.run(&UART0_IRQ_HANDLER, &DMA_IRQ_1_HANDLER)),
     ]
-}
-
-pub static UART0_IRQ_HANDLER: UartIrqHandler<UART0, UartPinout> = UartIrqHandler::new();
-
-#[interrupt]
-fn UART0_IRQ() {
-    UART0_IRQ_HANDLER.on_irq();
 }

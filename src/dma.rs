@@ -84,7 +84,7 @@ impl<
 {
     pub async fn run(
         self,
-        uart0irq_handler: &'static UartIrqHandler<U, P>,
+        uart0irq_handler: &'static UartIrqHandler<U>,
         dma_irq1handler: &'static DmaIrqHandler<DmaIrq1>,
     ) {
         let Self {
@@ -116,10 +116,10 @@ impl<
             .write_next(VecCapWriteTarget(Vec::with_capacity(N)));
             let mut alarm_wait = alarm.delay_ms(100);
             (channel1, channel2, from) = 'dma: loop {
-                let dma_wait = first_future(
-                    unsafe { dma_irq1handler.wait_done(CH1::id()) },
-                    unsafe { dma_irq1handler.wait_done(CH2::id()) },
-                );
+                let dma_wait =
+                    first_future(unsafe { dma_irq1handler.wait_done(CH1::id()) }, unsafe {
+                        dma_irq1handler.wait_done(CH2::id())
+                    });
                 match first_until(dma_wait, alarm_wait).await {
                     Ok(_) => {
                         debug!("dma irq first");
