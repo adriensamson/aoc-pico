@@ -5,13 +5,15 @@ use core::ptr::write_volatile;
 use core::task::Poll;
 use defmt::debug;
 use embedded_hal_async::delay::DelayNs;
+use embedded_io_async::Read;
 use rp2040_async::dma::{DmaIrq1, DmaIrqHandler};
-use rp2040_async::uart::UartIrqHandler;
+use rp2040_async::uart::{AsyncReader};
 use rp_pico::hal::dma::double_buffer::{Config, Transfer, WriteNext};
 use rp_pico::hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
 };
-use rp_pico::hal::uart::{Reader, UartDevice, ValidUartPinout};
+use rp_pico::hal::uart::{Reader, ValidUartPinout};
+use rp_pico::pac::UART0;
 
 struct VecCapWriteTarget(Vec<u8>);
 
@@ -76,15 +78,13 @@ impl<
         CH1: ChannelIndex,
         CH2: ChannelIndex,
         ALARM: DelayNs,
-        U: UartDevice,
-        P: ValidUartPinout<U>,
+        P: ValidUartPinout<UART0>,
         F: Fn(Vec<u8>),
         const N: usize,
-    > DoubleChannelReader<CH1, CH2, ALARM, Reader<U, P>, F, N>
+    > DoubleChannelReader<CH1, CH2, ALARM, Reader<UART0, P>, F, N>
 {
     pub async fn run(
         self,
-        uart0irq_handler: &'static UartIrqHandler<U>,
         dma_irq1handler: &'static DmaIrqHandler<DmaIrq1>,
     ) {
         let Self {
@@ -99,10 +99,12 @@ impl<
             let cap = vec.spare_capacity_mut();
             let buf =
                 unsafe { core::slice::from_raw_parts_mut(cap.as_mut_ptr().cast(), cap.len()) };
-            let len = uart0irq_handler.wait_rx(&mut from, buf).await;
+            let mut async_reader = AsyncReader::new(from);
+            let len = async_reader.read(buf).await.unwrap();
             unsafe { vec.set_len(len) };
             debug!("uart read {=[u8]:X} bytes", vec);
             on_data(vec);
+            from = async_reader.into_inner();
             if len < 16 {
                 continue;
             }

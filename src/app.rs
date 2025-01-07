@@ -13,7 +13,6 @@ use defmt::debug;
 use rp2040_async::dma::dma0::DMA_IRQ_0_HANDLER;
 use rp2040_async::dma::dma1::DMA_IRQ_1_HANDLER;
 use rp2040_async::timer::AsyncAlarm;
-use rp2040_async::uart::uart0::UART0_IRQ_HANDLER;
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{DMAExt, SingleChannel};
 use rp_pico::hal::uart::{UartConfig, UartPeripheral};
@@ -104,6 +103,6 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
             dma_chans.ch0,
             &DMA_IRQ_0_HANDLER,
         )),
-        Box::pin(double_dma.run(&UART0_IRQ_HANDLER, &DMA_IRQ_1_HANDLER)),
+        Box::pin(double_dma.run(&DMA_IRQ_1_HANDLER)),
     ]
 }
