@@ -7,7 +7,7 @@ use critical_section::Mutex;
 
 pub(crate) struct TriggerSlot {
     triggered: bool,
-    waker: Option<Waker>
+    waker: Option<Waker>,
 }
 
 impl TriggerSlot {
@@ -64,7 +64,7 @@ impl Future for TriggerFuture<'_> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         critical_section::with(|cs| {
-            let mut slot = self.0.0.borrow_ref_mut(cs);
+            let mut slot = self.0 .0.borrow_ref_mut(cs);
             if slot.check_triggered() {
                 slot.unregister();
                 Poll::Ready(())
@@ -79,7 +79,7 @@ impl Future for TriggerFuture<'_> {
 impl Drop for TriggerFuture<'_> {
     fn drop(&mut self) {
         critical_section::with(|cs| {
-            let mut slot = self.0.0.borrow_ref_mut(cs);
+            let mut slot = self.0 .0.borrow_ref_mut(cs);
             slot.check_triggered();
             slot.unregister();
         })

@@ -12,7 +12,7 @@ pub struct Executor<Idle: Fn(), const N: usize> {
 }
 
 impl<Idle: Fn(), const N: usize> Executor<Idle, N> {
-    pub fn new(futures: [Pin<Box<dyn Future<Output=()>>>; N], idle: Idle) -> Self {
+    pub fn new(futures: [Pin<Box<dyn Future<Output = ()>>>; N], idle: Idle) -> Self {
         Self {
             tasks: futures.map(Task::new),
             idle,
@@ -23,7 +23,7 @@ impl<Idle: Fn(), const N: usize> Executor<Idle, N> {
         loop {
             for task in &mut self.tasks {
                 match task.state {
-                    TaskState::Finished | TaskState::Waiting => {},
+                    TaskState::Finished | TaskState::Waiting => {}
                     TaskState::NotStarted | TaskState::Awakened => {
                         task.state = TaskState::Waiting;
                         let waker = task.waker();
@@ -32,13 +32,17 @@ impl<Idle: Fn(), const N: usize> Executor<Idle, N> {
                         match fut.poll(&mut ctx) {
                             Poll::Ready(()) => {
                                 task.state = TaskState::Finished;
-                            },
+                            }
                             Poll::Pending => {}
                         }
-                    },
+                    }
                 }
             }
-            if self.tasks.iter().all(|t| matches!(t.state, TaskState::Finished | TaskState::Waiting)) {
+            if self
+                .tasks
+                .iter()
+                .all(|t| matches!(t.state, TaskState::Finished | TaskState::Waiting))
+            {
                 (self.idle)();
             }
         }
@@ -54,12 +58,12 @@ enum TaskState {
 }
 
 struct Task {
-    future: Pin<Box<dyn Future<Output=()>>>,
+    future: Pin<Box<dyn Future<Output = ()>>>,
     state: TaskState,
 }
 
 impl Task {
-    fn new(future: Pin<Box<dyn Future<Output=()>>>) -> Self {
+    fn new(future: Pin<Box<dyn Future<Output = ()>>>) -> Self {
         Self {
             future,
             state: TaskState::NotStarted,
@@ -87,9 +91,5 @@ fn waker_wake_ref(data: *const ()) {
 }
 fn waker_drop(_data: *const ()) {}
 
-static RAW_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
-    waker_clone,
-    waker_wake,
-    waker_wake_ref,
-    waker_drop,
-);
+static RAW_WAKER_VTABLE: RawWakerVTable =
+    RawWakerVTable::new(waker_clone, waker_wake, waker_wake_ref, waker_drop);

@@ -1,10 +1,10 @@
+use crate::trigger::{TriggerCell, TriggerFuture};
 use core::future::Future;
 use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use rp2040_hal::fugit::MicrosDurationU32;
 use rp2040_hal::timer::{Alarm, Alarm0, Alarm1, Alarm2, Alarm3};
-use crate::trigger::{TriggerCell, TriggerFuture};
 
 pub struct TimerIrqHandler<A: AlarmIrq>(TriggerCell, PhantomData<A>);
 
@@ -31,25 +31,49 @@ pub trait AlarmIrq: Alarm {
 
 impl AlarmIrq for Alarm0 {
     fn clear_interrupt() {
-        unsafe { rp2040_hal::pac::TIMER::ptr().as_ref().unwrap().intr().write(|w| w.alarm_0().clear_bit_by_one()) };
+        unsafe {
+            rp2040_hal::pac::TIMER::ptr()
+                .as_ref()
+                .unwrap()
+                .intr()
+                .write(|w| w.alarm_0().clear_bit_by_one())
+        };
     }
 }
 
 impl AlarmIrq for Alarm1 {
     fn clear_interrupt() {
-        unsafe { rp2040_hal::pac::TIMER::ptr().as_ref().unwrap().intr().write(|w| w.alarm_1().clear_bit_by_one()) };
+        unsafe {
+            rp2040_hal::pac::TIMER::ptr()
+                .as_ref()
+                .unwrap()
+                .intr()
+                .write(|w| w.alarm_1().clear_bit_by_one())
+        };
     }
 }
 
 impl AlarmIrq for Alarm2 {
     fn clear_interrupt() {
-        unsafe { rp2040_hal::pac::TIMER::ptr().as_ref().unwrap().intr().write(|w| w.alarm_2().clear_bit_by_one()) };
+        unsafe {
+            rp2040_hal::pac::TIMER::ptr()
+                .as_ref()
+                .unwrap()
+                .intr()
+                .write(|w| w.alarm_2().clear_bit_by_one())
+        };
     }
 }
 
 impl AlarmIrq for Alarm3 {
     fn clear_interrupt() {
-        unsafe { rp2040_hal::pac::TIMER::ptr().as_ref().unwrap().intr().write(|w| w.alarm_3().clear_bit_by_one()) };
+        unsafe {
+            rp2040_hal::pac::TIMER::ptr()
+                .as_ref()
+                .unwrap()
+                .intr()
+                .write(|w| w.alarm_3().clear_bit_by_one())
+        };
     }
 }
 
@@ -64,8 +88,8 @@ impl<A: AlarmIrq> TimerIrqHandler<A> {
 
     pub fn on_irq(&self) {
         critical_section::with(|cs| {
-            self.0.0.borrow_ref_mut(cs).wake();
-            <A as  AlarmIrq>::clear_interrupt()
+            self.0 .0.borrow_ref_mut(cs).wake();
+            <A as AlarmIrq>::clear_interrupt()
         })
     }
 }
@@ -98,9 +122,9 @@ impl<A: AlarmIrqRt + 'static> embedded_hal_async::delay::DelayNs for AsyncAlarm<
 
 #[cfg(feature = "alarm0")]
 mod alarm0 {
+    use super::{AlarmIrqRt, TimerIrqHandler};
     use rp2040_hal::pac::interrupt;
     use rp2040_hal::timer::Alarm0;
-    use super::{AlarmIrqRt, TimerIrqHandler};
 
     static TIMER_IRQ_0_HANDLER: TimerIrqHandler<Alarm0> = TimerIrqHandler::new();
 
@@ -118,9 +142,9 @@ mod alarm0 {
 
 #[cfg(feature = "alarm1")]
 mod alarm1 {
+    use super::{AlarmIrqRt, TimerIrqHandler};
     use rp2040_hal::pac::interrupt;
     use rp2040_hal::timer::Alarm1;
-    use super::{AlarmIrqRt, TimerIrqHandler};
 
     static TIMER_IRQ_1_HANDLER: TimerIrqHandler<Alarm1> = TimerIrqHandler::new();
 
@@ -138,9 +162,9 @@ mod alarm1 {
 
 #[cfg(feature = "alarm2")]
 mod alarm2 {
+    use super::{AlarmIrqRt, TimerIrqHandler};
     use rp2040_hal::pac::interrupt;
     use rp2040_hal::timer::Alarm2;
-    use super::{AlarmIrqRt, TimerIrqHandler};
 
     static TIMER_IRQ_2_HANDLER: TimerIrqHandler<Alarm2> = TimerIrqHandler::new();
 
@@ -158,9 +182,9 @@ mod alarm2 {
 
 #[cfg(feature = "alarm3")]
 mod alarm3 {
+    use super::{AlarmIrqRt, TimerIrqHandler};
     use rp2040_hal::pac::interrupt;
     use rp2040_hal::timer::Alarm3;
-    use super::{AlarmIrqRt, TimerIrqHandler};
 
     static TIMER_IRQ_3_HANDLER: TimerIrqHandler<Alarm3> = TimerIrqHandler::new();
 

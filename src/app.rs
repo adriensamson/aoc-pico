@@ -10,8 +10,6 @@ use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
-use rp2040_async::dma::dma0::DMA_IRQ_0_HANDLER;
-use rp2040_async::dma::dma1::DMA_IRQ_1_HANDLER;
 use rp2040_async::timer::AsyncAlarm;
 use rp_pico::hal::clocks::init_clocks_and_plls;
 use rp_pico::hal::dma::{DMAExt, SingleChannel};
@@ -97,12 +95,7 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
     );
 
     [
-        Box::pin(crate::run_console(
-            console,
-            uart_tx,
-            dma_chans.ch0,
-            &DMA_IRQ_0_HANDLER,
-        )),
-        Box::pin(double_dma.run(&DMA_IRQ_1_HANDLER)),
+        Box::pin(crate::run_console(console, uart_tx, dma_chans.ch0)),
+        Box::pin(double_dma.run()),
     ]
 }

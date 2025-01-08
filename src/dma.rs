@@ -6,8 +6,8 @@ use core::task::Poll;
 use defmt::debug;
 use embedded_hal_async::delay::DelayNs;
 use embedded_io_async::Read;
-use rp2040_async::dma::{DmaIrq1, DmaIrqHandler};
-use rp2040_async::uart::{AsyncReader};
+use rp2040_async::dma::{AsyncTransfer, WaitDone};
+use rp2040_async::uart::AsyncReader;
 use rp_pico::hal::dma::double_buffer::{Config, Transfer, WriteNext};
 use rp_pico::hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
@@ -83,10 +83,7 @@ impl<
         const N: usize,
     > DoubleChannelReader<CH1, CH2, ALARM, Reader<UART0, P>, F, N>
 {
-    pub async fn run(
-        self,
-        dma_irq1handler: &'static DmaIrqHandler<DmaIrq1>,
-    ) {
+    pub async fn run(self) {
         let Self {
             mut alarm,
             mut channel1,
@@ -109,25 +106,26 @@ impl<
                 continue;
             }
             debug!("start dma");
-            let mut transfer = Config::new(
-                (channel1, channel2),
-                from,
-                VecCapWriteTarget(Vec::with_capacity(N)),
-            )
-            .start()
-            .write_next(VecCapWriteTarget(Vec::with_capacity(N)));
+            let mut transfer = AsyncTransfer::new_double_buffer_irq1(
+                Config::new(
+                    (channel1, channel2),
+                    from,
+                    VecCapWriteTarget(Vec::with_capacity(N)),
+                )
+                .start()
+                .write_next(VecCapWriteTarget(Vec::with_capacity(N))),
+            );
             let mut alarm_wait = alarm.delay_ms(100);
             (channel1, channel2, from) = 'dma: loop {
-                let dma_wait =
-                    first_future(unsafe { dma_irq1handler.wait_done(CH1::id()) }, unsafe {
-                        dma_irq1handler.wait_done(CH2::id())
-                    });
+                let dma_wait = transfer.wait_done();
                 match first_until(dma_wait, alarm_wait).await {
                     Ok(_) => {
                         debug!("dma irq first");
                         alarm_wait = alarm.delay_ms(100);
-                        let (target, transfer2) = transfer.wait();
-                        transfer = transfer2.write_next(VecCapWriteTarget(Vec::with_capacity(N)));
+                        let (target, transfer2) = transfer.into_inner().wait();
+                        transfer = AsyncTransfer::new_double_buffer_irq1(
+                            transfer2.write_next(VecCapWriteTarget(Vec::with_capacity(N))),
+                        );
                         let mut vec = target.0;
                         unsafe { vec.set_len(N) };
                         debug!("dma read {=[u8]:X} bytes", vec);
@@ -135,7 +133,7 @@ impl<
                     }
                     Err(_) => {
                         debug!("alarm irq first");
-                        let (ch1, ch2, from, vec) = abort(transfer, N);
+                        let (ch1, ch2, from, vec) = abort(transfer.into_inner(), N);
                         debug!("dma alarm read {=[u8]:X} bytes", vec);
                         on_data(vec);
                         break 'dma (ch1, ch2, from);
@@ -209,22 +207,6 @@ fn abort<
     let mut vec = target.0;
     unsafe { vec.set_len(expected_len - transcount) };
     (ch1, ch2, read, vec)
-}
-
-fn first_future<T>(
-    f1: impl Future<Output = T> + 'static,
-    f2: impl Future<Output = T> + 'static,
-) -> impl Future<Output = T> {
-    let (mut p1, mut p2) = (Box::pin(f1), Box::pin(f2));
-    poll_fn(move |cx| {
-        if let Poll::Ready(t) = p1.as_mut().poll(cx) {
-            Poll::Ready(t)
-        } else if let Poll::Ready(t) = p2.as_mut().poll(cx) {
-            Poll::Ready(t)
-        } else {
-            Poll::Pending
-        }
-    })
 }
 
 fn first_until<T, U>(
