@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rp2040-hal = "0.10.0"
+rp2040-hal = "0.11.0"
 critical-section = "1.2.0"
 embedded-hal-async = "1.0.0"
 embedded-io-async = "0.6.1"
@@ -12,11 +12,11 @@ nb = "1.1.0"
 #defmt = "0.3.8"
 
 [features]
-alarm0 = []
-alarm1 = []
-alarm2 = []
-alarm3 = []
-dma0 = []
-dma1 = []
-uart0 = []
-uart1 = []
+alarm0 = ["rp2040-hal/rt"]
+alarm1 = ["rp2040-hal/rt"]
+alarm2 = ["rp2040-hal/rt"]
+alarm3 = ["rp2040-hal/rt"]
+dma0 = ["rp2040-hal/rt"]
+dma1 = ["rp2040-hal/rt"]
+uart0 = ["rp2040-hal/rt"]
+uart1 = ["rp2040-hal/rt"]

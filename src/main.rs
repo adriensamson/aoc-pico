@@ -8,6 +8,12 @@ mod dma;
 mod memory;
 mod multicore;
 
+#[link_section = ".boot2"]
+#[no_mangle]
+#[used]
+pub static BOOT2_FIRMWARE: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
+
+
 #[allow(unused_imports)]
 use defmt_rtt as _;
 #[allow(unused_imports)]
@@ -23,9 +29,9 @@ use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
 use defmt::debug;
 use rp2040_async::dma::{AsyncTransfer, WaitDone};
-use rp_pico::hal::dma::single_buffer::Config;
-use rp_pico::hal::dma::{Channel, ChannelIndex, ReadTarget};
-use rp_pico::hal::uart::{UartDevice, ValidUartPinout, Writer};
+use rp2040_hal::dma::single_buffer::Config;
+use rp2040_hal::dma::{Channel, ChannelIndex, ReadTarget};
+use rp2040_hal::uart::{UartDevice, ValidUartPinout, Writer};
 
 struct VecReadTarget(Vec<u8>);
 

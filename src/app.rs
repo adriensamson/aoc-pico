@@ -11,14 +11,15 @@ use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
 use rp2040_async::timer::AsyncAlarm;
-use rp_pico::hal::clocks::init_clocks_and_plls;
-use rp_pico::hal::dma::{DMAExt, SingleChannel};
-use rp_pico::hal::uart::{UartConfig, UartPeripheral};
-use rp_pico::hal::{gpio::Pins, Clock, Sio, Timer, Watchdog};
-use rp_pico::pac::Interrupt;
-use rp_pico::XOSC_CRYSTAL_FREQ;
+use rp2040_hal::clocks::init_clocks_and_plls;
+use rp2040_hal::dma::{DMAExt, SingleChannel};
+use rp2040_hal::uart::{UartConfig, UartPeripheral};
+use rp2040_hal::{gpio::Pins, Clock, Sio, Timer, Watchdog};
+use rp2040_hal::pac::Interrupt;
 
-#[rp_pico::entry]
+pub const XOSC_CRYSTAL_FREQ: u32 = 12_000_000;
+
+#[rp2040_hal::entry]
 fn entry() -> ! {
     let futures = init();
 
@@ -38,7 +39,7 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
     unsafe { init_heap() };
     install_core0_stack_guard();
 
-    let mut pac = rp_pico::pac::Peripherals::take().unwrap();
+    let mut pac = rp2040_hal::pac::Peripherals::take().unwrap();
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
     let clocks = init_clocks_and_plls(
         XOSC_CRYSTAL_FREQ,

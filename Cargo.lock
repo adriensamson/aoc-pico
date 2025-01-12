@@ -16,8 +16,9 @@ dependencies = [
  "embedded-io-async",
  "myasync",
  "panic-probe",
- "rp-pico",
  "rp2040-async",
+ "rp2040-boot2",
+ "rp2040-hal",
 ]
 
 [[package]]
@@ -485,19 +486,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rp-pico"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9342d3ac7011ac688300979e9b52a81f0add1d05feb02868cf94bfee0705b28"
-dependencies = [
- "cortex-m-rt",
- "fugit",
- "rp2040-boot2",
- "rp2040-hal",
- "usb-device",
-]
-
-[[package]]
 name = "rp2040-async"
 version = "0.1.0"
 dependencies = [
@@ -519,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "rp2040-hal"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bitfield 0.14.0",
  "cortex-m",

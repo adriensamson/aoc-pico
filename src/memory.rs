@@ -21,7 +21,7 @@ pub(crate) unsafe fn init_heap() {
 #[inline(always)]
 fn install_stack_guard(stack_bottom: usize) {
     debug!("Installing stack guard at {:X}", stack_bottom);
-    let core = unsafe { rp_pico::pac::CorePeripherals::steal() };
+    let core = unsafe { rp2040_hal::pac::CorePeripherals::steal() };
 
     // Trap if MPU is already configured
     if core.MPU.ctrl.read() != 0 {

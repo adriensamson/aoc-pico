@@ -10,9 +10,9 @@ use cortex_m::asm::wfe;
 use cortex_m::singleton;
 use critical_section::Mutex;
 use defmt::debug;
-use rp_pico::hal::sio::SioFifo;
-use rp_pico::hal::Sio;
-use rp_pico::pac::Peripherals;
+use rp2040_hal::sio::SioFifo;
+use rp2040_hal::Sio;
+use rp2040_hal::pac::Peripherals;
 
 pub struct MulticoreProxy {
     pub fifo: &'static mut SioFifo,

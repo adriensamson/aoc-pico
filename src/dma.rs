@@ -8,12 +8,12 @@ use embedded_hal_async::delay::DelayNs;
 use embedded_io_async::Read;
 use rp2040_async::dma::{AsyncTransfer, WaitDone};
 use rp2040_async::uart::AsyncReader;
-use rp_pico::hal::dma::double_buffer::{Config, Transfer, WriteNext};
-use rp_pico::hal::dma::{
+use rp2040_hal::dma::double_buffer::{Config, Transfer, WriteNext};
+use rp2040_hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
 };
-use rp_pico::hal::uart::{Reader, ValidUartPinout};
-use rp_pico::pac::UART0;
+use rp2040_hal::uart::{Reader, ValidUartPinout};
+use rp2040_hal::pac::UART0;
 
 struct VecCapWriteTarget(Vec<u8>);
 
@@ -158,7 +158,7 @@ fn abort<
     >,
     expected_len: usize,
 ) -> (Channel<CH1>, Channel<CH2>, FROM, Vec<u8>) {
-    let dma = unsafe { rp_pico::pac::DMA::steal() };
+    let dma = unsafe { rp2040_hal::pac::DMA::steal() };
     let dma_ch1 = dma.ch(CH1::id() as usize);
     let dma_ch2 = dma.ch(CH2::id() as usize);
 
