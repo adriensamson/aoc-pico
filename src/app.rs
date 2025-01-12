@@ -61,7 +61,7 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
         &mut pac.RESETS,
     );
 
-    let (mut uart_rx, uart_tx) = UartPeripheral::new(
+    let (uart_rx, uart_tx) = UartPeripheral::new(
         pac.UART0,
         (pins.gpio0.into_function(), pins.gpio1.into_function()),
         &mut pac.RESETS,
@@ -79,7 +79,6 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
 
     let console_input = singleton!(: MutexInputQueue = MutexInputQueue::new()).unwrap();
     let console = Console::new(InputParser::new(&*console_input), commands);
-    uart_rx.enable_rx_interrupt();
 
     let mut dma_chans = pac.DMA.split(&mut pac.RESETS);
     dma_chans.ch0.enable_irq0();

@@ -126,11 +126,13 @@ impl<D: UartDevice> UartIrqHandler<D> {
 pub struct AsyncReader<D: UartDevice, P: ValidUartPinout<D>>(Reader<D, P>);
 
 impl<D: UartDevice, P: ValidUartPinout<D>> AsyncReader<D, P> {
-    pub fn new(reader: Reader<D, P>) -> Self {
+    pub fn new(mut reader: Reader<D, P>) -> Self {
+        reader.enable_rx_interrupt();
         Self(reader)
     }
 
-    pub fn into_inner(self) -> Reader<D, P> {
+    pub fn into_inner(mut self) -> Reader<D, P> {
+        self.0.disable_rx_interrupt();
         self.0
     }
 }
