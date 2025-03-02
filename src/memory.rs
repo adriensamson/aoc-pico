@@ -5,7 +5,7 @@ use embedded_alloc::LlffHeap as Heap;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 
-extern "C" {
+unsafe extern "C" {
     static _stack_end: usize;
     static core1_stack_end: usize;
 }

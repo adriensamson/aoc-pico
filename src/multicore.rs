@@ -120,7 +120,7 @@ extern "C" fn core1_entry() {
     });
     f()
 }
-extern "C" {
+unsafe extern "C" {
     static core1_stack_start: u32;
 }
 
