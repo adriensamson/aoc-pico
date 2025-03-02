@@ -146,8 +146,8 @@ impl AocDay for AocDay4 {
 
 #[cfg(test)]
 mod test {
-    use crate::aoc::day4::AocDay4;
     use crate::aoc::AocDay;
+    use crate::aoc::day4::AocDay4;
     use alloc::string::ToString;
 
     const INPUT: &'static str = "MMMSXXMASM

@@ -4,15 +4,15 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use aoc_pico::shell::{Command, RunningCommand};
 use core::cell::UnsafeCell;
-use core::future::{ready, Future};
+use core::future::{Future, ready};
 use core::pin::Pin;
 use cortex_m::asm::wfe;
 use cortex_m::singleton;
 use critical_section::Mutex;
 use defmt::debug;
-use rp2040_hal::sio::SioFifo;
 use rp2040_hal::Sio;
 use rp2040_hal::pac::Peripherals;
+use rp2040_hal::sio::SioFifo;
 
 pub struct MulticoreProxy {
     pub fifo: &'static mut SioFifo,

@@ -53,8 +53,8 @@ impl AocDay for AocDay1 {
 
 #[cfg(test)]
 mod test {
-    use crate::aoc::day1::AocDay1;
     use crate::aoc::AocDay;
+    use crate::aoc::day1::AocDay1;
     use alloc::string::ToString;
 
     const DATA: &str = "3   4

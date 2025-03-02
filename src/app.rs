@@ -1,7 +1,7 @@
+use crate::MutexInputQueue;
 use crate::dma::TimeoutDmaReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
-use crate::MutexInputQueue;
 use alloc::boxed::Box;
 use aoc_pico::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
@@ -13,9 +13,9 @@ use defmt::debug;
 use rp2040_async::timer::AsyncAlarm;
 use rp2040_hal::clocks::init_clocks_and_plls;
 use rp2040_hal::dma::{DMAExt, SingleChannel};
-use rp2040_hal::uart::{UartConfig, UartPeripheral};
-use rp2040_hal::{gpio::Pins, Clock, Sio, Timer, Watchdog};
 use rp2040_hal::pac::Interrupt;
+use rp2040_hal::uart::{UartConfig, UartPeripheral};
+use rp2040_hal::{Clock, Sio, Timer, Watchdog, gpio::Pins};
 
 pub const XOSC_CRYSTAL_FREQ: u32 = 12_000_000;
 

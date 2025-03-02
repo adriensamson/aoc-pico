@@ -90,8 +90,8 @@ fn tolerate_one_bad(
 
 #[cfg(test)]
 mod test {
-    use crate::aoc::day2::AocDay2;
     use crate::aoc::AocDay;
+    use crate::aoc::day2::AocDay2;
     use alloc::string::ToString;
 
     const INPUT: &str = "7 6 4 2 1

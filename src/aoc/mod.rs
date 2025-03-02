@@ -9,7 +9,7 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::future::{ready, Future};
+use core::future::{Future, ready};
 use core::pin::Pin;
 
 mod day1;

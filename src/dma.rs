@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::future::{poll_fn, Future};
+use core::future::{Future, poll_fn};
 use core::ptr::write_volatile;
 use core::task::Poll;
 use defmt::debug;
@@ -12,8 +12,8 @@ use rp2040_hal::dma::single_buffer::{Config, Transfer};
 use rp2040_hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
 };
-use rp2040_hal::uart::{Reader, ValidUartPinout};
 use rp2040_hal::pac::UART0;
+use rp2040_hal::uart::{Reader, ValidUartPinout};
 
 struct VecCapWriteTarget(Vec<u8>);
 
@@ -48,19 +48,14 @@ pub struct TimeoutDmaReader<
 }
 
 impl<
-        CH: ChannelIndex,
-        ALARM: DelayNs,
-        FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
-        F: Fn(Vec<u8>),
-        const N: usize,
-    > TimeoutDmaReader<CH, ALARM, FROM, F, N>
+    CH: ChannelIndex,
+    ALARM: DelayNs,
+    FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
+    F: Fn(Vec<u8>),
+    const N: usize,
+> TimeoutDmaReader<CH, ALARM, FROM, F, N>
 {
-    pub fn new(
-        channel: Channel<CH>,
-        alarm: ALARM,
-        from: FROM,
-        on_data: F,
-    ) -> Self {
+    pub fn new(channel: Channel<CH>, alarm: ALARM, from: FROM, on_data: F) -> Self {
         Self {
             alarm,
             channel,
@@ -69,13 +64,8 @@ impl<
         }
     }
 }
-impl<
-        CH: ChannelIndex,
-        ALARM: DelayNs,
-        P: ValidUartPinout<UART0>,
-        F: Fn(Vec<u8>),
-        const N: usize,
-    > TimeoutDmaReader<CH, ALARM, Reader<UART0, P>, F, N>
+impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>), const N: usize>
+    TimeoutDmaReader<CH, ALARM, Reader<UART0, P>, F, N>
 {
     pub async fn run(self) {
         let Self {
@@ -100,12 +90,7 @@ impl<
             }
             debug!("start dma");
             let mut transfer = AsyncTransfer::new_single_buffer_irq1(
-                Config::new(
-                    channel,
-                    from,
-                    VecCapWriteTarget(Vec::with_capacity(N)),
-                )
-                .start()
+                Config::new(channel, from, VecCapWriteTarget(Vec::with_capacity(N))).start(),
             );
             let mut alarm_wait = alarm.delay_ms(100);
             (channel, from) = 'dma: loop {
@@ -116,11 +101,8 @@ impl<
                         alarm_wait = alarm.delay_ms(100);
                         let (channel, from, target) = transfer.into_inner().wait();
                         transfer = AsyncTransfer::new_single_buffer_irq1(
-                            Config::new(
-                                channel,
-                                from,
-                                VecCapWriteTarget(Vec::with_capacity(N)),
-                            ).start()
+                            Config::new(channel, from, VecCapWriteTarget(Vec::with_capacity(N)))
+                                .start(),
                         );
                         let mut vec = target.0;
                         unsafe { vec.set_len(N) };
@@ -140,15 +122,8 @@ impl<
     }
 }
 
-fn abort<
-    CH: ChannelIndex,
-    FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
->(
-    transfer: Transfer<
-        Channel<CH>,
-        FROM,
-        VecCapWriteTarget,
-    >,
+fn abort<CH: ChannelIndex, FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget>(
+    transfer: Transfer<Channel<CH>, FROM, VecCapWriteTarget>,
     expected_len: usize,
 ) -> (Channel<CH>, FROM, Vec<u8>) {
     let dma = unsafe { rp2040_hal::pac::DMA::steal() };
