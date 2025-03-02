@@ -1,4 +1,4 @@
-use crate::dma::DoubleChannelReader;
+use crate::dma::TimeoutDmaReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
 use crate::MutexInputQueue;
@@ -85,10 +85,8 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
     dma_chans.ch0.enable_irq0();
 
     dma_chans.ch1.enable_irq1();
-    dma_chans.ch2.enable_irq1();
-    let double_dma = DoubleChannelReader::<_, _, _, _, _, 512>::new(
+    let double_dma = TimeoutDmaReader::<_, _, _, _, 512>::new(
         dma_chans.ch1,
-        dma_chans.ch2,
         AsyncAlarm::new(timer.alarm_0().unwrap()),
         uart_rx,
         |v| console_input.push(v),

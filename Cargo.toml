@@ -19,9 +19,6 @@ embedded-io-async = "0.6.1"
 myasync = {path = "./myasync"}
 rp2040-async = {path = "../rp2040-async", features = ["timer0", "dma0", "dma1", "uart0"]}
 
-[patch.crates-io]
-rp2040-hal = { path = "../rp-hal/rp2040-hal" }
-
 # cargo build/run
 [profile.dev]
 codegen-units = 1

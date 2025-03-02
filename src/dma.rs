@@ -8,7 +8,7 @@ use embedded_hal_async::delay::DelayNs;
 use embedded_io_async::Read;
 use rp2040_async::dma::{AsyncTransfer, WaitDone};
 use rp2040_async::uart::AsyncReader;
-use rp2040_hal::dma::double_buffer::{Config, Transfer, WriteNext};
+use rp2040_hal::dma::single_buffer::{Config, Transfer};
 use rp2040_hal::dma::{
     Channel, ChannelIndex, EndlessReadTarget, ReadTarget, SingleChannel, WriteTarget,
 };
@@ -34,60 +34,53 @@ unsafe impl WriteTarget for VecCapWriteTarget {
     }
 }
 
-pub struct DoubleChannelReader<
-    CH1: ChannelIndex,
-    CH2: ChannelIndex,
+pub struct TimeoutDmaReader<
+    CH: ChannelIndex,
     ALARM: DelayNs,
     FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
     F: Fn(Vec<u8>),
     const N: usize,
 > {
     alarm: ALARM,
-    channel1: Channel<CH1>,
-    channel2: Channel<CH2>,
+    channel: Channel<CH>,
     from: FROM,
     on_data: F,
 }
 
 impl<
-        CH1: ChannelIndex,
-        CH2: ChannelIndex,
+        CH: ChannelIndex,
         ALARM: DelayNs,
         FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
         F: Fn(Vec<u8>),
         const N: usize,
-    > DoubleChannelReader<CH1, CH2, ALARM, FROM, F, N>
+    > TimeoutDmaReader<CH, ALARM, FROM, F, N>
 {
     pub fn new(
-        channel1: Channel<CH1>,
-        channel2: Channel<CH2>,
+        channel: Channel<CH>,
         alarm: ALARM,
         from: FROM,
         on_data: F,
     ) -> Self {
         Self {
             alarm,
-            channel1,
-            channel2,
+            channel,
             from,
             on_data,
         }
     }
 }
 impl<
-        CH1: ChannelIndex,
-        CH2: ChannelIndex,
+        CH: ChannelIndex,
         ALARM: DelayNs,
         P: ValidUartPinout<UART0>,
         F: Fn(Vec<u8>),
         const N: usize,
-    > DoubleChannelReader<CH1, CH2, ALARM, Reader<UART0, P>, F, N>
+    > TimeoutDmaReader<CH, ALARM, Reader<UART0, P>, F, N>
 {
     pub async fn run(self) {
         let Self {
             mut alarm,
-            mut channel1,
-            mut channel2,
+            mut channel,
             mut from,
             on_data,
         } = self;
@@ -106,25 +99,28 @@ impl<
                 continue;
             }
             debug!("start dma");
-            let mut transfer = AsyncTransfer::new_double_buffer_irq1(
+            let mut transfer = AsyncTransfer::new_single_buffer_irq1(
                 Config::new(
-                    (channel1, channel2),
+                    channel,
                     from,
                     VecCapWriteTarget(Vec::with_capacity(N)),
                 )
                 .start()
-                .write_next(VecCapWriteTarget(Vec::with_capacity(N))),
             );
             let mut alarm_wait = alarm.delay_ms(100);
-            (channel1, channel2, from) = 'dma: loop {
+            (channel, from) = 'dma: loop {
                 let dma_wait = transfer.wait_done();
                 match first_until(dma_wait, alarm_wait).await {
                     Ok(_) => {
                         debug!("dma irq first");
                         alarm_wait = alarm.delay_ms(100);
-                        let (target, transfer2) = transfer.into_inner().wait();
-                        transfer = AsyncTransfer::new_double_buffer_irq1(
-                            transfer2.write_next(VecCapWriteTarget(Vec::with_capacity(N))),
+                        let (channel, from, target) = transfer.into_inner().wait();
+                        transfer = AsyncTransfer::new_single_buffer_irq1(
+                            Config::new(
+                                channel,
+                                from,
+                                VecCapWriteTarget(Vec::with_capacity(N)),
+                            ).start()
                         );
                         let mut vec = target.0;
                         unsafe { vec.set_len(N) };
@@ -133,10 +129,10 @@ impl<
                     }
                     Err(_) => {
                         debug!("alarm irq first");
-                        let (ch1, ch2, from, vec) = abort(transfer.into_inner(), N);
+                        let (ch, from, vec) = abort(transfer.into_inner(), N);
                         debug!("dma alarm read {=[u8]:X} bytes", vec);
                         on_data(vec);
-                        break 'dma (ch1, ch2, from);
+                        break 'dma (ch, from);
                     }
                 }
             }
@@ -145,24 +141,20 @@ impl<
 }
 
 fn abort<
-    CH1: ChannelIndex,
-    CH2: ChannelIndex,
+    CH: ChannelIndex,
     FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget,
 >(
     transfer: Transfer<
-        Channel<CH1>,
-        Channel<CH2>,
+        Channel<CH>,
         FROM,
         VecCapWriteTarget,
-        WriteNext<VecCapWriteTarget>,
     >,
     expected_len: usize,
-) -> (Channel<CH1>, Channel<CH2>, FROM, Vec<u8>) {
+) -> (Channel<CH>, FROM, Vec<u8>) {
     let dma = unsafe { rp2040_hal::pac::DMA::steal() };
-    let dma_ch1 = dma.ch(CH1::id() as usize);
-    let dma_ch2 = dma.ch(CH2::id() as usize);
+    let dma_ch = dma.ch(CH::id() as usize);
 
-    let mask = 1 << CH1::id() | 1 << CH2::id();
+    let mask = 1 << CH::id();
 
     // disable (spurious) interrupts
     let inte0_mask = dma.inte0().read().bits() & mask;
@@ -175,27 +167,17 @@ fn abort<
     }
 
     // pause
-    dma_ch1.ch_ctrl_trig().write(|w| w.en().clear_bit());
-    dma_ch2.ch_ctrl_trig().write(|w| w.en().clear_bit());
+    dma_ch.ch_ctrl_trig().write(|w| w.en().clear_bit());
     // read transcount
-    let transcount1 = dma_ch1.ch_trans_count().read().bits() as usize;
-    let transcount2 = dma_ch2.ch_trans_count().read().bits() as usize;
-    let transcount = if transcount1 > 0 {
-        transcount1
-    } else {
-        transcount2
-    };
+    let transcount = dma_ch.ch_trans_count().read().bits() as usize;
     // abort
     let chan_abort = dma.chan_abort();
     unsafe { chan_abort.write(|w| w.bits(mask)) };
     while chan_abort.read().bits() != 0 {}
 
-    let (target, transfer) = transfer.wait();
-    let (mut ch1, mut ch2, read, _) = transfer.wait();
-    ch1.check_irq0();
-    ch1.check_irq1();
-    ch2.check_irq0();
-    ch2.check_irq1();
+    let (mut ch, read, target) = transfer.wait();
+    ch.check_irq0();
+    ch.check_irq1();
 
     if inte0_mask != 0 {
         unsafe { write_volatile(dma.inte0().as_ptr().byte_add(0x2000), inte0_mask) };
@@ -206,7 +188,7 @@ fn abort<
 
     let mut vec = target.0;
     unsafe { vec.set_len(expected_len - transcount) };
-    (ch1, ch2, read, vec)
+    (ch, read, vec)
 }
 
 fn first_until<T, U>(
