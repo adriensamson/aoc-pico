@@ -82,7 +82,7 @@ impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>)
             let mut async_reader = AsyncReader::new(from);
             let len = async_reader.read(buf).await.unwrap();
             unsafe { vec.set_len(len) };
-            debug!("uart read {=[u8]:X} bytes", vec);
+            //debug!("uart read {=[u8]:X} bytes", vec);
             on_data(vec);
             from = async_reader.into_inner();
             if len < 16 {
@@ -106,13 +106,13 @@ impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>)
                         );
                         let mut vec = target.0;
                         unsafe { vec.set_len(N) };
-                        debug!("dma read {=[u8]:X} bytes", vec);
+                        //debug!("dma read {=[u8]:X} bytes", vec);
                         on_data(vec);
                     }
                     Err(_) => {
                         debug!("alarm irq first");
                         let (ch, from, vec) = abort(transfer.into_inner(), N);
-                        debug!("dma alarm read {=[u8]:X} bytes", vec);
+                        //debug!("dma alarm read {=[u8]:X} bytes", vec);
                         on_data(vec);
                         break 'dma (ch, from);
                     }
