@@ -268,7 +268,7 @@ enum ConsoleState {
 
 impl Default for ConsoleState {
     fn default() -> Self {
-        Self::Prompt(String::new())
+        Self::Prompt(String::with_capacity(COLS))
     }
 }
 
@@ -291,6 +291,9 @@ impl<I> Console<I> {
     }
 }
 
+const COLS : usize = 128;
+const ROWS : usize = 256;
+
 impl<I: AsyncInputIterator> Console<I> {
     pub async fn next_wait(&mut self) -> Vec<u8> {
         match &mut self.state {
@@ -300,7 +303,7 @@ impl<I: AsyncInputIterator> Console<I> {
                 if let Some(command) = self.commands.get(name) {
                     let args = args_iter.map(ToString::to_string).collect();
                     self.state =
-                        ConsoleState::RunningCommand(command.exec(args, core::mem::take(input)))
+                        ConsoleState::RunningCommand(command.exec(args, core::mem::take(input)));
                 } else {
                     self.state = ConsoleState::Error("unknown command")
                 }
@@ -310,12 +313,12 @@ impl<I: AsyncInputIterator> Console<I> {
                 if let Some(line) = command.next().await {
                     return (String::from("\r\n> ") + &line).into_bytes();
                 }
-                self.state = ConsoleState::Prompt(String::new());
+                self.state = ConsoleState::Prompt(String::with_capacity(COLS));
                 self.eol().as_bytes().to_vec()
             }
             ConsoleState::Error(err) => {
                 let mut res = err.to_string();
-                self.state = ConsoleState::Prompt(String::new());
+                self.state = ConsoleState::Prompt(String::with_capacity(COLS));
                 res += self.eol();
                 res.into_bytes()
             }
@@ -327,7 +330,7 @@ impl<I: AsyncInputIterator> Console<I> {
             } => match self.input.next_wait().await {
                 Input::Line(s) => {
                     current_line.push_str(&s);
-                    input_lines.push(core::mem::take(current_line));
+                    input_lines.push(core::mem::replace(current_line, String::with_capacity(COLS)));
                     (s + self.eol()).into_bytes()
                 }
                 Input::IncompleteLine(s) => {
@@ -335,7 +338,7 @@ impl<I: AsyncInputIterator> Console<I> {
                     s.into_bytes()
                 }
                 Input::Control('\x04') => {
-                    input_lines.push(core::mem::take(current_line));
+                    input_lines.push(core::mem::replace(current_line, String::with_capacity(COLS)));
                     self.state = ConsoleState::RunCommand {
                         cmd_line: core::mem::take(cmd_line),
                         input: core::mem::take(input_lines),
@@ -350,8 +353,8 @@ impl<I: AsyncInputIterator> Console<I> {
                     if let Some(prompt) = prompt.strip_suffix('<') {
                         self.state = ConsoleState::ParsingInput {
                             cmd_line: prompt.to_string(),
-                            input: Vec::new(),
-                            current_line: String::new(),
+                            input: Vec::with_capacity(ROWS),
+                            current_line: String::with_capacity(COLS),
                         };
                     } else {
                         self.state = ConsoleState::RunCommand {
