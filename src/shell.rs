@@ -265,6 +265,7 @@ enum ConsoleState {
     },
     RunningCommand(Box<dyn RunningCommand>),
     Error(&'static str),
+    Poisoned,
 }
 
 impl Default for ConsoleState {
@@ -281,95 +282,120 @@ impl<I> Console<I> {
             state: Default::default(),
         }
     }
-
-    fn eol(&self) -> &'static [u8] {
-        match &self.state {
-            ConsoleState::Prompt(_) => b"\r\n$ ",
-            ConsoleState::ParsingInput { .. } => b"\r\n< ",
-            ConsoleState::RunCommand { .. } | ConsoleState::RunningCommand(_) => b"\r\n> ",
-            ConsoleState::Error(_) => b"\r\n! ",
-        }
-    }
 }
+
+const EOL_NONE : &[u8] = b"";
+const EOL_PROMPT : &[u8] = b"\r\n$ ";
+const EOL_INPUT : &[u8] = b"\r\n< ";
+const EOL_RUN : &[u8] = b"\r\n> ";
 
 const COLS : usize = 128;
 const ROWS : usize = 256;
 
 impl<I: AsyncInputIterator> Console<I> {
     pub async fn next_wait(&mut self) -> (Cow<[u8]>, Cow<[u8]>) {
-        match &mut self.state {
+        match core::mem::replace(&mut self.state, ConsoleState::Poisoned) {
             ConsoleState::RunCommand { cmd_line, input } => {
                 let mut args_iter = cmd_line.trim().split(' ').map(str::trim);
                 let name = args_iter.next().unwrap();
                 if let Some(command) = self.commands.get(name) {
                     let args = args_iter.map(ToString::to_string).collect();
                     self.state =
-                        ConsoleState::RunningCommand(command.exec(args, core::mem::take(input)));
+                        ConsoleState::RunningCommand(command.exec(args, input));
                 } else {
                     self.state = ConsoleState::Error("unknown command")
                 }
                 Box::pin(self.next_wait()).await
             }
-            ConsoleState::RunningCommand(command) => {
+            ConsoleState::RunningCommand(mut command) => {
                 if let Some(line) = command.next().await {
+                    self.state = ConsoleState::RunningCommand(command);
                     return (b"\r\n> ".into(), line.into_bytes().into());
                 }
                 self.state = ConsoleState::Prompt(String::with_capacity(COLS));
-                (self.eol().into(), b"".into())
+                (EOL_PROMPT.into(), EOL_NONE.into())
             }
             ConsoleState::Error(err) => {
                 let res = err.to_string();
                 self.state = ConsoleState::Prompt(String::with_capacity(COLS));
-                (res.into_bytes().into(), self.eol().into())
+                (res.into_bytes().into(), EOL_PROMPT.into())
             }
             ConsoleState::ParsingInput {
                 cmd_line,
-                input: input_lines,
-                current_line,
+                input: mut input_lines,
+                mut current_line,
                 ..
             } => match self.input.next_wait().await {
                 Input::Line(s) => {
-                    current_line.push_str(&s);
-                    input_lines.push(core::mem::replace(current_line, String::with_capacity(COLS)));
-                    (s.into_bytes().into(), self.eol().into())
+                    let start = if current_line.is_empty() {
+                        input_lines.push(s);
+                        0
+                    } else {
+                        let start = current_line.len();
+                        current_line.push_str(&s);
+                        input_lines.push(core::mem::replace(&mut current_line, String::with_capacity(COLS)));
+                        start
+                    };
+                    self.state = ConsoleState::ParsingInput {cmd_line, input: input_lines, current_line};
+                    let ConsoleState::ParsingInput {input, .. } = &self.state else { unreachable!() };
+                    (input.last().unwrap().as_bytes()[start..].into(), EOL_INPUT.into())
                 }
                 Input::IncompleteLine(s) => {
-                    current_line.push_str(&s);
-                    (s.into_bytes().into(), b"".into())
+                    let start = if current_line.is_empty() {
+                        current_line = s;
+                        0
+                    }  else {
+                        let start = current_line.len();
+                        current_line.push_str(&s);
+                        start
+                    };
+                    self.state = ConsoleState::ParsingInput {cmd_line, input: input_lines, current_line};
+                    let ConsoleState::ParsingInput {current_line, .. } = &self.state else { unreachable!() };
+                    (current_line.as_bytes()[start..].into(), EOL_NONE.into())
                 }
                 Input::Control('\x04') => {
-                    input_lines.push(core::mem::replace(current_line, String::with_capacity(COLS)));
+                    input_lines.push(current_line);
                     self.state = ConsoleState::RunCommand {
-                        cmd_line: core::mem::take(cmd_line),
-                        input: core::mem::take(input_lines),
+                        cmd_line,
+                        input: input_lines,
                     };
-                    (self.eol().into(), b"".into())
+                    (EOL_RUN.into(), EOL_NONE.into())
                 }
-                _ => (b"".into(), b"".into()),
+                _ => {
+                    self.state = ConsoleState::ParsingInput {cmd_line, input: input_lines, current_line};
+                    (EOL_NONE.into(), EOL_NONE.into())
+                }
             },
-            ConsoleState::Prompt(prompt) => match self.input.next_wait().await {
+            ConsoleState::Prompt(mut prompt) => match self.input.next_wait().await {
                 Input::Line(s) => {
                     prompt.push_str(&s);
-                    if let Some(prompt) = prompt.strip_suffix('<') {
+                    let eol = if let Some(prompt) = prompt.strip_suffix('<') {
                         self.state = ConsoleState::ParsingInput {
                             cmd_line: prompt.to_string(),
                             input: Vec::with_capacity(ROWS),
                             current_line: String::with_capacity(COLS),
                         };
+                        EOL_INPUT
                     } else {
                         self.state = ConsoleState::RunCommand {
-                            cmd_line: core::mem::take(prompt),
+                            cmd_line: prompt,
                             input: Vec::new(),
                         };
-                    }
-                    (s.into_bytes().into(), self.eol().into())
+                        EOL_RUN
+                    };
+                    (s.into_bytes().into(), eol.into())
                 }
                 Input::IncompleteLine(s) => {
                     prompt.push_str(&s);
-                    (s.into_bytes().into(), b"".into())
+                    self.state = ConsoleState::Prompt(prompt);
+                    (s.into_bytes().into(), EOL_NONE.into())
                 }
-                _ => (b"".into(), b"".into()),
+                _ => {
+                    self.state = ConsoleState::Prompt(prompt);
+                    (EOL_NONE.into(), EOL_NONE.into())
+                },
             },
+            ConsoleState::Poisoned => unreachable!(),
         }
     }
 }
