@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -281,12 +282,12 @@ impl<I> Console<I> {
         }
     }
 
-    fn eol(&self) -> &str {
+    fn eol(&self) -> &'static [u8] {
         match &self.state {
-            ConsoleState::Prompt(_) => "\r\n$ ",
-            ConsoleState::ParsingInput { .. } => "\r\n< ",
-            ConsoleState::RunCommand { .. } | ConsoleState::RunningCommand(_) => "\r\n> ",
-            ConsoleState::Error(_) => "\r\n! ",
+            ConsoleState::Prompt(_) => b"\r\n$ ",
+            ConsoleState::ParsingInput { .. } => b"\r\n< ",
+            ConsoleState::RunCommand { .. } | ConsoleState::RunningCommand(_) => b"\r\n> ",
+            ConsoleState::Error(_) => b"\r\n! ",
         }
     }
 }
@@ -295,7 +296,7 @@ const COLS : usize = 128;
 const ROWS : usize = 256;
 
 impl<I: AsyncInputIterator> Console<I> {
-    pub async fn next_wait(&mut self) -> Vec<u8> {
+    pub async fn next_wait(&mut self) -> (Cow<[u8]>, Cow<[u8]>) {
         match &mut self.state {
             ConsoleState::RunCommand { cmd_line, input } => {
                 let mut args_iter = cmd_line.trim().split(' ').map(str::trim);
@@ -311,16 +312,15 @@ impl<I: AsyncInputIterator> Console<I> {
             }
             ConsoleState::RunningCommand(command) => {
                 if let Some(line) = command.next().await {
-                    return (String::from("\r\n> ") + &line).into_bytes();
+                    return (b"\r\n> ".into(), line.into_bytes().into());
                 }
                 self.state = ConsoleState::Prompt(String::with_capacity(COLS));
-                self.eol().as_bytes().to_vec()
+                (self.eol().into(), b"".into())
             }
             ConsoleState::Error(err) => {
-                let mut res = err.to_string();
+                let res = err.to_string();
                 self.state = ConsoleState::Prompt(String::with_capacity(COLS));
-                res += self.eol();
-                res.into_bytes()
+                (res.into_bytes().into(), self.eol().into())
             }
             ConsoleState::ParsingInput {
                 cmd_line,
@@ -331,11 +331,11 @@ impl<I: AsyncInputIterator> Console<I> {
                 Input::Line(s) => {
                     current_line.push_str(&s);
                     input_lines.push(core::mem::replace(current_line, String::with_capacity(COLS)));
-                    (s + self.eol()).into_bytes()
+                    (s.into_bytes().into(), self.eol().into())
                 }
                 Input::IncompleteLine(s) => {
                     current_line.push_str(&s);
-                    s.into_bytes()
+                    (s.into_bytes().into(), b"".into())
                 }
                 Input::Control('\x04') => {
                     input_lines.push(core::mem::replace(current_line, String::with_capacity(COLS)));
@@ -343,9 +343,9 @@ impl<I: AsyncInputIterator> Console<I> {
                         cmd_line: core::mem::take(cmd_line),
                         input: core::mem::take(input_lines),
                     };
-                    self.eol().as_bytes().to_vec()
+                    (self.eol().into(), b"".into())
                 }
-                _ => Vec::new(),
+                _ => (b"".into(), b"".into()),
             },
             ConsoleState::Prompt(prompt) => match self.input.next_wait().await {
                 Input::Line(s) => {
@@ -362,13 +362,13 @@ impl<I: AsyncInputIterator> Console<I> {
                             input: Vec::new(),
                         };
                     }
-                    (s + self.eol()).into_bytes()
+                    (s.into_bytes().into(), self.eol().into())
                 }
                 Input::IncompleteLine(s) => {
                     prompt.push_str(&s);
-                    s.into_bytes()
+                    (s.into_bytes().into(), b"".into())
                 }
-                _ => Vec::new(),
+                _ => (b"".into(), b"".into()),
             },
         }
     }

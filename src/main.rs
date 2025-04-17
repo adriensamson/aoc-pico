@@ -32,9 +32,9 @@ use rp2040_hal::dma::single_buffer::Config;
 use rp2040_hal::dma::{Channel, ChannelIndex, ReadTarget};
 use rp2040_hal::uart::{UartDevice, ValidUartPinout, Writer};
 
-struct VecReadTarget(Vec<u8>);
+struct SliceReadTarget<'a>(&'a [u8]);
 
-unsafe impl ReadTarget for VecReadTarget {
+unsafe impl ReadTarget for SliceReadTarget<'_> {
     type ReceivedWord = u8;
 
     fn rx_treq() -> Option<u8> {
@@ -78,7 +78,7 @@ impl InputQueue for &'_ MutexInputQueue {
     }
 }
 
-impl<'a> AsyncInputQueue for &'a MutexInputQueue {
+impl AsyncInputQueue for &MutexInputQueue {
     async fn pop_wait(&mut self) -> Vec<u8> {
         MutexInputQueueWaiter(self).await
     }
@@ -106,11 +106,15 @@ async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
     mut ch: Channel<D>,
 ) {
     loop {
-        let out = console.next_wait().await;
-        let mut transfer = AsyncTransfer::new_single_buffer_irq0(
-            Config::new(ch, VecReadTarget(out), writer).start(),
-        );
-        transfer.wait_done().await;
-        (ch, _, writer) = transfer.into_inner().wait();
+        let (out1, out2) = console.next_wait().await;
+        for out in [out1, out2] {
+            if !out.is_empty() {
+                let mut transfer = AsyncTransfer::new_single_buffer_irq0(
+                    Config::new(ch, SliceReadTarget(out.as_ref()), writer).start(),
+                );
+                transfer.wait_done().await;
+                (ch, _, writer) = transfer.into_inner().wait();
+            }
+        }
     }
 }
