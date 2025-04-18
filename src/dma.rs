@@ -111,7 +111,7 @@ impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>)
                     }
                     Err(_) => {
                         debug!("alarm irq first");
-                        let (ch, from, vec) = abort(transfer.into_inner(), N);
+                        let (ch, from, vec) = abort(transfer.into_inner());
                         //debug!("dma alarm read {=[u8]:X} bytes", vec);
                         on_data(vec);
                         break 'dma (ch, from);
@@ -124,45 +124,11 @@ impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>)
 
 fn abort<CH: ChannelIndex, FROM: ReadTarget<ReceivedWord = u8> + EndlessReadTarget>(
     transfer: Transfer<Channel<CH>, FROM, VecCapWriteTarget>,
-    expected_len: usize,
 ) -> (Channel<CH>, FROM, Vec<u8>) {
-    let dma = unsafe { rp2040_hal::pac::DMA::steal() };
-    let dma_ch = dma.ch(CH::id() as usize);
-
-    let mask = 1 << CH::id();
-
-    // disable (spurious) interrupts
-    let inte0_mask = dma.inte0().read().bits() & mask;
-    let inte1_mask = dma.inte1().read().bits() & mask;
-    if inte0_mask != 0 {
-        unsafe { write_volatile(dma.inte0().as_ptr().byte_add(0x3000), inte0_mask) };
-    }
-    if inte1_mask != 0 {
-        unsafe { write_volatile(dma.inte1().as_ptr().byte_add(0x3000), inte1_mask) };
-    }
-
-    // pause
-    dma_ch.ch_ctrl_trig().write(|w| w.en().clear_bit());
-    // read transcount
-    let transcount = dma_ch.ch_trans_count().read().bits() as usize;
-    // abort
-    let chan_abort = dma.chan_abort();
-    unsafe { chan_abort.write(|w| w.bits(mask)) };
-    while chan_abort.read().bits() != 0 {}
-
-    let (mut ch, read, target) = transfer.wait();
-    ch.check_irq0();
-    ch.check_irq1();
-
-    if inte0_mask != 0 {
-        unsafe { write_volatile(dma.inte0().as_ptr().byte_add(0x2000), inte0_mask) };
-    }
-    if inte1_mask != 0 {
-        unsafe { write_volatile(dma.inte1().as_ptr().byte_add(0x2000), inte1_mask) };
-    }
-
+    let (ch, read, target) = transfer.abort();
+    let next_addr = ch.ch().ch_al1_write_addr().read().bits() as usize;
     let mut vec = target.0;
-    unsafe { vec.set_len(expected_len - transcount) };
+    unsafe { vec.set_len(next_addr - vec.as_ptr() as usize) };
     (ch, read, vec)
 }
 
