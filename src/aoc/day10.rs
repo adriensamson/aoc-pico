@@ -33,4 +33,21 @@ impl AocDay for AocDay10 {
 
         format!("{score}")
     }
+
+    fn part2(&self) -> String {
+        let mut score = 0;
+        for start in self.coords_by_height[0].iter() {
+            let mut positions = vec![*start];
+            for h in 1..=9 {
+                positions = positions.into_iter().map(|p| {
+                    self.coords_by_height[h].iter()
+                        .copied()
+                        .filter(move |c| (c.0 - p.0).abs() + (c.1 - p.1).abs() == 1)
+                }).flatten().collect();
+            }
+            score += positions.len();
+        }
+
+        format!("{score}")
+    }
 }
