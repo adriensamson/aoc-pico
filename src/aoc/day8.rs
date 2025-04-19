@@ -52,4 +52,50 @@ impl AocDay for AocDay8 {
 
         format!("{}", antinodes.len())
     }
+
+    fn part2(&self) -> String {
+        let mut antinodes = BTreeSet::new();
+        for ants in self.antennas.values() {
+            for i in 0..ants.len()-1 {
+                for j in i+1..ants.len() {
+                    let (a_y, a_x) = ants[i];
+                    let (b_y, b_x) = ants[j];
+                    let (inc_x, inc_y) = normalize(a_x as isize - b_x as isize, a_y as isize - b_y as isize);
+                    let mut k = 0;
+                    loop {
+                        let x = a_x as isize + k * inc_x;
+                        let y = a_y as isize + k * inc_y;
+                        if 0 <= x && x < self.width as isize && 0 <= y && y < self.height as isize {
+                            antinodes.insert((y as usize, x as usize));
+                            k += 1;
+                        } else {
+                            break
+                        }
+                    }
+                    k = -1;
+                    loop {
+                        let x = a_x as isize + k * inc_x;
+                        let y = a_y as isize + k * inc_y;
+                        if 0 <= x && x < self.width as isize && 0 <= y && y < self.height as isize {
+                            antinodes.insert((y as usize, x as usize));
+                            k -= 1;
+                        } else {
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        format!("{}", antinodes.len())
+    }
+}
+
+fn normalize(x: isize, y: isize) -> (isize, isize) {
+    for i in 2..x.abs().max(y.abs()) {
+        if x % i == 0 && y % i == 0 {
+            return normalize(x / i, y / i);
+        }
+    }
+    (x, y)
 }
