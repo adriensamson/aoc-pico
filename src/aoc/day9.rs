@@ -58,4 +58,32 @@ impl AocDay for AocDay9 {
 
         format!("{checksum}")
     }
+
+    fn part2(&self) -> String {
+        let mut files : Vec<(usize, u8)> = Vec::with_capacity(self.layout.len() / 2 + 1);
+        let mut frees : Vec<(usize, u8)> = Vec::with_capacity(self.layout.len() / 2);
+        let mut pos = 0usize;
+        for (i, len) in self.layout.iter().copied().enumerate() {
+            if i % 2 == 0 {
+                files.push((pos, len));
+                pos += len as usize;
+            } else {
+                frees.push((pos, len));
+                pos += len as usize;
+            }
+        }
+        for (pos, len) in files.iter_mut().rev() {
+            if let Some(free) = frees.iter_mut().filter(|(fpos, flen)| fpos < pos && flen >= len).next() {
+                *pos = free.0;
+                free.0 += *len as usize;
+                free.1 -= *len;
+            }
+        }
+
+        let checksum : u64 = files.into_iter()
+            .enumerate()
+            .map(|(id, (pos, len))| (0..len).map(|i| id as u64 * (pos + i as usize) as u64).sum::<u64>())
+            .sum();
+        format!("{checksum}")
+    }
 }
