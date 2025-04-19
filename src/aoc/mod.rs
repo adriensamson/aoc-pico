@@ -12,6 +12,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::future::{Future, ready};
 use core::pin::Pin;
+use crate::aoc::day8::AocDay8;
 
 mod day1;
 mod day2;
@@ -20,6 +21,7 @@ mod day4;
 mod day5;
 mod day6;
 mod day7;
+mod day8;
 
 pub struct AocRunner;
 
@@ -62,7 +64,7 @@ impl Command for AocRunner {
 
 type AocDayFn = fn(Vec<String>) -> Box<dyn RunningCommand>;
 
-const NB_DAYS: usize = 8;
+const NB_DAYS: usize = 1 + 8;
 const DAYS: [AocDayFn; NB_DAYS] = [
     TestDay0::run,
     AocDay1::run,
@@ -72,6 +74,7 @@ const DAYS: [AocDayFn; NB_DAYS] = [
     AocDay5::run,
     AocDay6::run,
     AocDay7::run,
+    AocDay8::run,
 ];
 
 trait AocDay: Send + Sized
