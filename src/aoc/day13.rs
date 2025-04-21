@@ -32,6 +32,22 @@ impl Machine {
         }
         0
     }
+
+    fn part2(&self) -> u64 {
+        const BUMP : f64 = 10_000_000_000_000f64;
+        let div = self.button_b.1 * self.button_a.0 - self.button_b.0 * self.button_a.1;
+        if div == 0 {
+            return 0;
+        }
+        let t_a = ((self.button_b.1 as f64 * (BUMP + self.prize.0 as f64) - self.button_b.0 as f64 * (BUMP + self.prize.1 as f64)) / div as f64) as i64;
+        let t_b = -((self.button_a.1 as f64 * (BUMP + self.prize.0 as f64) - self.button_a.0 as f64 * (BUMP + self.prize.1 as f64)) / div as f64) as i64;
+        if t_a >= 0 && t_b >= 0 {
+            if (BUMP as i64 + self.prize.0 as i64) == t_a * self.button_a.0 as i64 + t_b * self.button_b.0 as i64 {
+                return (t_a * 3 + t_b) as u64;
+            }
+        }
+        0
+    }
 }
 
 impl AocDay for AocDay13 {
@@ -74,6 +90,11 @@ impl AocDay for AocDay13 {
 
     fn part1(&self) -> String {
         let count : u32 = self.machines.iter().map(|m| m.part1()).sum();
+        format!("{count}")
+    }
+
+    fn part2(&self) -> String {
+        let count : u64 = self.machines.iter().map(|m| m.part2()).sum();
         format!("{count}")
     }
 }
