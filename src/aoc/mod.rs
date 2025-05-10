@@ -17,6 +17,7 @@ use crate::aoc::day11::AocDay11;
 use crate::aoc::day12::AocDay12;
 use crate::aoc::day13::AocDay13;
 use crate::aoc::day14::AocDay14;
+use crate::aoc::day15::AocDay15;
 use crate::aoc::day8::AocDay8;
 use crate::aoc::day9::AocDay9;
 
@@ -34,6 +35,7 @@ mod day11;
 mod day12;
 mod day13;
 mod day14;
+mod day15;
 
 pub struct AocRunner;
 
@@ -76,7 +78,7 @@ impl Command for AocRunner {
 
 type AocDayFn = fn(Vec<String>) -> Box<dyn RunningCommand>;
 
-const NB_DAYS: usize = 1 + 14;
+const NB_DAYS: usize = 1 + 15;
 const DAYS: [AocDayFn; NB_DAYS] = [
     TestDay0::run,
     AocDay1::run,
@@ -93,6 +95,7 @@ const DAYS: [AocDayFn; NB_DAYS] = [
     AocDay12::run,
     AocDay13::run,
     AocDay14::run,
+    AocDay15::run,
 ];
 
 trait AocDay: Send + Sized
