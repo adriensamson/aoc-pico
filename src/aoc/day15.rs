@@ -1,7 +1,7 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use alloc::string::String;
-use alloc::format;
+use alloc::{format, vec};
 use crate::aoc::AocDay;
 
 pub struct AocDay15 {
@@ -62,6 +62,14 @@ impl AocDay for AocDay15 {
         }
         format!("{}", map.sum_coords())
     }
+
+    fn part2(&self) -> String {
+        let mut map = WideMap::from(&self.map);
+        for dir in self.directions.iter().copied() {
+            map.move_robot(dir);
+        }
+        format!("{}", map.sum_coords())
+    }
 }
 
 impl Direction {
@@ -101,5 +109,55 @@ impl Map {
 
     fn sum_coords(&self) -> u64 {
         self.boxes.iter().map(|(r, c)| 100 * *r as u64 + *c as u64).sum()
+    }
+}
+
+struct WideMap {
+    walls: BTreeSet<(u8, u8)>,
+    boxes: BTreeSet<(u8, u8)>,
+    robot: (u8, u8),
+}
+
+impl From<&Map> for WideMap {
+    fn from(value: &Map) -> Self {
+        let walls = value.walls.iter().copied().map(|(r, c)| [(r, c * 2), (r, c * 2 + 1)]).flatten().collect();
+        let boxes = value.boxes.iter().copied().map(|(r, c)| (r, c * 2)).collect();
+        let robot = (value.robot.0, value.robot.1 * 2);
+        Self {walls, boxes, robot}
+    }
+}
+
+impl WideMap {
+    fn sum_coords(&self) -> u64 {
+        self.boxes.iter().map(|(r, c)| 100 * *r as u64 + *c as u64).sum()
+    }
+
+    fn move_robot(&mut self, dir: Direction) {
+        let mut current_positions = vec![self.robot];
+        let mut moving_boxes = vec![];
+        loop {
+            if current_positions.iter().any(|p| self.walls.contains(&dir.apply(*p))) {
+                // blocked by wall
+                return;
+            }
+            let next_boxes : BTreeSet<_> = current_positions.iter().copied()
+                .map(|(r, c)| [dir.apply((r, c)), dir.apply((r, c.saturating_sub(1)))])
+                .flatten()
+                .filter(|b| self.boxes.contains(b) && !moving_boxes.contains(b))
+                .collect();
+            moving_boxes.extend(&next_boxes);
+            if next_boxes.is_empty() {
+                break;
+            }
+            current_positions = next_boxes.iter().copied().map(|(r, c)| [(r, c), (r, c + 1)]).flatten().collect();
+        }
+        // move boxes
+        for b in moving_boxes.iter().copied() {
+            self.boxes.remove(&b);
+        }
+        for b in moving_boxes {
+            self.boxes.insert(dir.apply(b));
+        }
+        self.robot = dir.apply(self.robot);
     }
 }
