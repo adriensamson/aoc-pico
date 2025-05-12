@@ -2,7 +2,8 @@ use alloc::collections::btree_map::Entry;
 use alloc::collections::{BTreeSet, BTreeMap};
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::format;
+use alloc::{format, vec};
+use defmt::debug;
 use crate::aoc::AocDay;
 use crate::aoc::coord::{Coord, Direction};
 
@@ -111,6 +112,61 @@ impl AocDay for AocDay16 {
         };
         format!("{score}")
     }
+
+    fn part2(&self) -> String {
+        let start = State {
+            position: self.start,
+            direction: Direction::Right,
+        };
+        let mut states : BTreeMap<State, (usize, Log)> = BTreeMap::new();
+        let mut done = BTreeSet::new();
+        states.insert(start, (0, Log::new(self.start)));
+        loop {
+            let state = states.iter().min_by_key(|(_, (score, _))| *score).map(|(state, _)| *state).unwrap();
+            let (score, log) = states.remove(&state).unwrap();
+            done.insert(state);
+            debug!("current score: {}, states count: {}, done count: {}", score, states.len(), done.len());
+            if state.position == self.end {
+                break;
+            }
+            for (next, incr) in state.next(&self.graph) {
+                if done.contains(&next) {
+                    continue;
+                }
+                let score2 = score + incr;
+                match states.entry(next) {
+                    Entry::Occupied(mut entry) => {
+                        if score2 < entry.get().0 {
+                            entry.insert((score2, log.extend(state.position)));
+                        } else if score2 == entry.get().0 {
+                            entry.get_mut().1.merge(&log)
+                        }
+                    },
+                    Entry::Vacant(entry) => {
+                        entry.insert((score2, log.extend(state.position)));
+                    }
+                }
+            }
+        }
+        debug!("found!");
+        todo!();
+        /*let mut steps = vec![self.end];
+        let mut seats = BTreeSet::new();
+        while let Some(to) = steps.pop() {
+            if let Some(froms) = segments.get(&to) {
+                for &(from, dir) in froms {
+                    let mut pos = from;
+                    seats.insert(pos);
+                    while pos != to {
+                        pos = pos + dir;
+                        seats.insert(pos);
+                    }
+                    steps.push(from);
+                }
+            }
+        }
+        format!("{}", seats.len())*/
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -131,4 +187,47 @@ impl State {
                 .map(|(to, dist)| (Self {position: to, direction: dir}, score + dist))
             ).collect()
     }
+}
+
+#[derive(Eq, PartialEq, Clone, Debug)]
+struct Log {
+    steps: Vec<LogStep>,
+}
+
+impl Log {
+    fn new(pos: Coord) -> Self {
+        Self {
+            steps: vec![LogStep::One(pos)],
+        }
+    }
+
+    fn extend(&self, pos: Coord) -> Self {
+        let mut steps = self.steps.clone();
+        if steps.last() != Some(&LogStep::One(pos)) {
+            steps.push(LogStep::One(pos));
+        }
+        Self { steps }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        let mut i = 0;
+        loop {
+            if self.steps.len() > i && other.steps.len() > i && self.steps[i] == other.steps[i] {
+                i += 1;
+            } else {
+                let end = self.steps.pop().unwrap();
+                let ours = self.steps.split_off(i);
+                let theirs = other.steps[i..].to_vec();
+                self.steps.push(LogStep::Multi(vec![Log {steps: ours}, Log { steps: theirs}]));
+                self.steps.push(end);
+                break;
+            }
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Clone, Debug)]
+enum LogStep {
+    One(Coord),
+    Multi(Vec<Log>),
 }
