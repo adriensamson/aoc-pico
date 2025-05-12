@@ -7,7 +7,7 @@ use crate::aoc::AocDay;
 use crate::aoc::coord::{Coord, Direction};
 
 pub struct AocDay16 {
-    walls: BTreeSet<Coord>,
+    graph: BTreeMap<(Coord, Direction), (Coord, usize)>,
     start: Coord,
     end: Coord,
 }
@@ -17,7 +17,11 @@ impl AocDay for AocDay16 {
         let mut walls = BTreeSet::new();
         let mut start = Coord::default();
         let mut end = Coord::default();
+        let mut width = 0;
+        let mut height = 0;
         for (r, row) in input.iter().filter(|s| !s.is_empty()).enumerate() {
+            height += 1;
+            width = width.max(row.len() as u8);
             for (c, char) in row.chars().enumerate() {
                 match char {
                     'S' => { start = Coord {row: r as u8, col: c as u8} },
@@ -27,7 +31,50 @@ impl AocDay for AocDay16 {
                 }
             }
         }
-        Self {walls, start, end}
+        let mut graph = BTreeMap::new();
+        for r in 0u8..height {
+            for c in 0u8..width {
+                let from = Coord {row: r, col: c};
+                if walls.contains(&from) {
+                    continue;
+                }
+                if !walls.contains(&(from + Direction::Top)) || !walls.contains(&(from + Direction::Bottom)) {
+                    let mut next = from + Direction::Right;
+                    let mut n = 1;
+                    loop {
+                        if walls.contains(&next) {
+                            break;
+                        }
+                        if walls.contains(&(next + Direction::Top)) && walls.contains(&(next + Direction::Bottom)) && next != end {
+                            next = next + Direction::Right;
+                            n += 1;
+                        } else {
+                            graph.insert((from, Direction::Right), (next, n));
+                            graph.insert((next, Direction::Left), (from, n));
+                            break;
+                        }
+                    }
+                }
+                if !walls.contains(&(from + Direction::Left)) || !walls.contains(&(from + Direction::Right)) {
+                    let mut next = from + Direction::Bottom;
+                    let mut n = 1;
+                    loop {
+                        if walls.contains(&next) {
+                            break;
+                        }
+                        if walls.contains(&(next + Direction::Left)) && walls.contains(&(next + Direction::Right)) && next != start {
+                            next = next + Direction::Bottom;
+                            n += 1;
+                        } else {
+                            graph.insert((from, Direction::Bottom), (next, n));
+                            graph.insert((next, Direction::Top), (from, n));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        Self {graph, start, end}
     }
 
     fn part1(&self) -> String {
@@ -45,7 +92,7 @@ impl AocDay for AocDay16 {
             }
             done.insert(state);
             states.remove(&state);
-            for (next, incr) in state.next(&self.walls) {
+            for (next, incr) in state.next(&self.graph) {
                 if done.contains(&next) {
                     continue;
                 }
@@ -73,33 +120,15 @@ struct State {
 }
 
 impl State {
-    fn next(&self, walls: &BTreeSet<Coord>) -> Vec<(State, usize)> {
-        let mut vec = Vec::with_capacity(4);
-
-        let mut next = self.position + self.direction;
-        let mut score = 1;
-        loop {
-            if walls.contains(&next) {
-                break;
-            }
-            if walls.contains(&(next + self.direction.rotate_left())) && walls.contains(&(next + self.direction.rotate_right())) {
-                next = next + self.direction;
-                score += 1;
-            } else {
-                vec.push((Self {position: next, direction: self.direction}, score));
-                break;
-            }
-        }
-
-        for (dir, score) in [
+    fn next(&self, graph: &BTreeMap<(Coord, Direction), (Coord, usize)>) -> Vec<(State, usize)> {
+        [
+            (self.direction, 0),
             (self.direction.rotate_right(), 1000),
             (self.direction.rotate_left(), 1000),
             (self.direction.opposite(), 2000),
-        ] {
-            if !walls.contains(&(self.position + dir)) {
-                vec.push((Self {position: self.position, direction: dir}, score));
-            }
-        }
-        vec
+        ].into_iter()
+            .filter_map(|(dir, score)| graph.get(&(self.position, dir)).copied()
+                .map(|(to, dist)| (Self {position: to, direction: dir}, score + dist))
+            ).collect()
     }
 }
