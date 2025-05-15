@@ -120,7 +120,7 @@ struct WideMap {
 
 impl From<&Map> for WideMap {
     fn from(value: &Map) -> Self {
-        let walls = value.walls.iter().copied().map(|(r, c)| [(r, c * 2), (r, c * 2 + 1)]).flatten().collect();
+        let walls = value.walls.iter().copied().flat_map(|(r, c)| [(r, c * 2), (r, c * 2 + 1)]).collect();
         let boxes = value.boxes.iter().copied().map(|(r, c)| (r, c * 2)).collect();
         let robot = (value.robot.0, value.robot.1 * 2);
         Self {walls, boxes, robot}
@@ -141,19 +141,18 @@ impl WideMap {
                 return;
             }
             let next_boxes : BTreeSet<_> = current_positions.iter().copied()
-                .map(|(r, c)| [dir.apply((r, c)), dir.apply((r, c.saturating_sub(1)))])
-                .flatten()
+                .flat_map(|(r, c)| [dir.apply((r, c)), dir.apply((r, c.saturating_sub(1)))])
                 .filter(|b| self.boxes.contains(b) && !moving_boxes.contains(b))
                 .collect();
             moving_boxes.extend(&next_boxes);
             if next_boxes.is_empty() {
                 break;
             }
-            current_positions = next_boxes.iter().copied().map(|(r, c)| [(r, c), (r, c + 1)]).flatten().collect();
+            current_positions = next_boxes.iter().copied().flat_map(|(r, c)| [(r, c), (r, c + 1)]).collect();
         }
         // move boxes
-        for b in moving_boxes.iter().copied() {
-            self.boxes.remove(&b);
+        for b in moving_boxes.iter() {
+            self.boxes.remove(b);
         }
         for b in moving_boxes {
             self.boxes.insert(dir.apply(b));

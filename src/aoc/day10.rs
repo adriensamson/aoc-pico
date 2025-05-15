@@ -39,11 +39,11 @@ impl AocDay for AocDay10 {
         for start in self.coords_by_height[0].iter() {
             let mut positions = vec![*start];
             for h in 1..=9 {
-                positions = positions.into_iter().map(|p| {
+                positions = positions.into_iter().flat_map(|p| {
                     self.coords_by_height[h].iter()
                         .copied()
                         .filter(move |c| (c.0 - p.0).abs() + (c.1 - p.1).abs() == 1)
-                }).flatten().collect();
+                }).collect();
             }
             score += positions.len();
         }

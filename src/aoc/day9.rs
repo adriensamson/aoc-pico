@@ -9,7 +9,7 @@ pub struct AocDay9 {
 
 impl AocDay for AocDay9 {
     fn new(input: Vec<String>) -> Self {
-        let layout = input.iter().map(|s| s.trim().chars()).flatten()
+        let layout = input.iter().flat_map(|s| s.trim().chars())
             .map(|c| format!("{c}").parse().unwrap())
             .collect();
         Self {layout}
@@ -73,7 +73,7 @@ impl AocDay for AocDay9 {
             }
         }
         for (pos, len) in files.iter_mut().rev() {
-            if let Some(free) = frees.iter_mut().filter(|(fpos, flen)| fpos < pos && flen >= len).next() {
+            if let Some(free) = frees.iter_mut().find(|(fpos, flen)| fpos < pos && flen >= len) {
                 *pos = free.0;
                 free.0 += *len as usize;
                 free.1 -= *len;

@@ -57,13 +57,11 @@ impl Region {
                         added = true;
                         max_row = max_row.max(p.0);
                         region.plots.push(p);
+                    } else if p.0 > max_row + 1 {
+                        rest.extend(plots.iter().skip(i));
+                        break;
                     } else {
-                        if p.0 > max_row + 1 {
-                            rest.extend(plots.iter().skip(i));
-                            break;
-                        } else {
-                            rest.push_back(p);
-                        }
+                        rest.push_back(p);
                     }
                 }
                 plots = rest;
