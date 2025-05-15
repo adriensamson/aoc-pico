@@ -1,9 +1,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::future::{Future, poll_fn};
-use core::ptr::write_volatile;
 use core::task::Poll;
-use defmt::debug;
 use embedded_hal_async::delay::DelayNs;
 use embedded_io_async::Read;
 use rp2040_async::dma::{AsyncTransfer, WaitDone};
@@ -82,13 +80,11 @@ impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>)
             let mut async_reader = AsyncReader::new(from);
             let len = async_reader.read(buf).await.unwrap();
             unsafe { vec.set_len(len) };
-            //debug!("uart read {=[u8]:X} bytes", vec);
             on_data(vec);
             from = async_reader.into_inner();
             if len < 16 {
                 continue;
             }
-            debug!("start dma");
             let mut transfer = AsyncTransfer::new_single_buffer_irq1(
                 Config::new(channel, from, VecCapWriteTarget(Vec::with_capacity(N))).start(),
             );
@@ -97,7 +93,6 @@ impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>)
                 let dma_wait = transfer.wait_done();
                 match first_until(dma_wait, alarm_wait).await {
                     Ok(_) => {
-                        debug!("dma irq first");
                         alarm_wait = alarm.delay_ms(100);
                         let (channel, from, target) = transfer.into_inner().wait();
                         transfer = AsyncTransfer::new_single_buffer_irq1(
@@ -106,13 +101,10 @@ impl<CH: ChannelIndex, ALARM: DelayNs, P: ValidUartPinout<UART0>, F: Fn(Vec<u8>)
                         );
                         let mut vec = target.0;
                         unsafe { vec.set_len(N) };
-                        //debug!("dma read {=[u8]:X} bytes", vec);
                         on_data(vec);
                     }
                     Err(_) => {
-                        debug!("alarm irq first");
                         let (ch, from, vec) = abort(transfer.into_inner());
-                        //debug!("dma alarm read {=[u8]:X} bytes", vec);
                         on_data(vec);
                         break 'dma (ch, from);
                     }

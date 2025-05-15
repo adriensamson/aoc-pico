@@ -5,8 +5,9 @@ extern crate alloc;
 
 mod app;
 mod dma;
-mod memory;
+pub(crate) mod memory;
 mod multicore;
+mod aoc;
 
 #[unsafe(link_section = ".boot2")]
 #[unsafe(no_mangle)]
@@ -26,7 +27,6 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use critical_section::Mutex;
-use defmt::debug;
 use rp2040_async::dma::{AsyncTransfer, WaitDone};
 use rp2040_hal::dma::single_buffer::Config;
 use rp2040_hal::dma::{Channel, ChannelIndex, ReadTarget};
@@ -64,7 +64,6 @@ impl MutexInputQueue {
         critical_section::with(|cs| {
             let (vd, w) = &mut *self.0.borrow_ref_mut(cs);
             vd.push_back(vec);
-            debug!("wake");
             if let Some(w) = w.take() {
                 w.wake();
             }

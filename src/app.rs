@@ -3,7 +3,7 @@ use crate::dma::TimeoutDmaReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
 use alloc::boxed::Box;
-use aoc_pico::aoc::AocRunner;
+use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
 use core::future::Future;
 use cortex_m::asm::wfi;

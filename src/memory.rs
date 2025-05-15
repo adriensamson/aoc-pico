@@ -18,6 +18,14 @@ pub(crate) unsafe fn init_heap() {
     unsafe { HEAP.init(heap_bottom, heap_size) }
 }
 
+#[allow(unused)]
+pub fn debug_heap_size() {
+    let used = HEAP.used();
+    let free = HEAP.free();
+    let percent = 100 * used / (used + free);
+    debug!("HEAP usage: {}k ({}%)", used / 1024, percent);
+}
+
 #[inline(always)]
 fn install_stack_guard(stack_bottom: usize) {
     debug!("Installing stack guard at {:X}", stack_bottom);

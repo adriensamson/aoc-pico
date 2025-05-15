@@ -5,7 +5,7 @@ use crate::aoc::day4::AocDay4;
 use crate::aoc::day5::AocDay5;
 use crate::aoc::day6::AocDay6;
 use crate::aoc::day7::AocDay7;
-use crate::shell::{Command, RunningCommand};
+use aoc_pico::shell::{Command, RunningCommand};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;

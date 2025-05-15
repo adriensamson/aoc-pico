@@ -5,5 +5,3 @@ extern crate alloc;
 extern crate std;
 
 pub mod shell;
-
-pub mod aoc;

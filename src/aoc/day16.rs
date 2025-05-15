@@ -8,13 +8,14 @@ use crate::aoc::AocDay;
 use crate::aoc::coord::{Coord, Direction};
 
 pub struct AocDay16 {
-    graph: BTreeMap<(Coord, Direction), (Coord, usize)>,
+    graph: BTreeMap<(Coord, Direction), (Coord, u8)>,
     start: Coord,
     end: Coord,
 }
 
 impl AocDay for AocDay16 {
     fn new(input: Vec<String>) -> Self {
+        crate::memory::debug_heap_size();
         let mut walls = BTreeSet::new();
         let mut start = Coord::default();
         let mut end = Coord::default();
@@ -75,10 +76,12 @@ impl AocDay for AocDay16 {
                 }
             }
         }
+        debug!("graph size: {}", graph.len());
         Self {graph, start, end}
     }
 
     fn part1(&self) -> String {
+        crate::memory::debug_heap_size();
         let start = State {
             position: self.start,
             direction: Direction::Right,
@@ -114,6 +117,7 @@ impl AocDay for AocDay16 {
     }
 
     fn part2(&self) -> String {
+        crate::memory::debug_heap_size();
         let start = State {
             position: self.start,
             direction: Direction::Right,
@@ -176,7 +180,7 @@ struct State {
 }
 
 impl State {
-    fn next(&self, graph: &BTreeMap<(Coord, Direction), (Coord, usize)>) -> Vec<(State, usize)> {
+    fn next(&self, graph: &BTreeMap<(Coord, Direction), (Coord, u8)>) -> Vec<(State, usize)> {
         [
             (self.direction, 0),
             (self.direction.rotate_right(), 1000),
@@ -184,7 +188,7 @@ impl State {
             (self.direction.opposite(), 2000),
         ].into_iter()
             .filter_map(|(dir, score)| graph.get(&(self.position, dir)).copied()
-                .map(|(to, dist)| (Self {position: to, direction: dir}, score + dist))
+                .map(|(to, dist)| (Self {position: to, direction: dir}, score + dist as usize))
             ).collect()
     }
 }

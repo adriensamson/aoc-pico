@@ -22,7 +22,6 @@ impl Command for MulticoreProxy {
     fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
         let boxed = Box::new((args, input));
         let ptr = Box::into_raw(boxed);
-        debug!("core0: write {:X}", ptr);
         self.fifo.write_blocking(ptr as u32);
         let fifo: &'static mut SioFifo = unsafe { core::mem::transmute(&mut self.fifo) };
         Box::new(MulticoreReceiver::new(fifo))
@@ -49,7 +48,6 @@ impl RunningCommand for MulticoreReceiver {
             return Box::pin(ready(None));
         }
         let addr = self.fifo.read_blocking() as *mut Option<String>; // TODO: async
-        debug!("core0: read {:X}", addr);
         let item = unsafe { Box::from_raw(addr) };
         if item.is_none() {
             self.finished = true;
@@ -73,17 +71,14 @@ impl<C: Command + 'static> MulticoreRunner<C> {
             [Box::pin(async move {
                 loop {
                     let addr = self.fifo.read_blocking() as *mut (Vec<String>, Vec<String>);
-                    debug!("core1 read {:X}", addr);
                     let line = unsafe { Box::from_raw(addr) };
                     let (args, input) = *line;
                     let mut running = self.inner.exec(args, input);
                     while let Some(res) = running.next().await {
                         let boxed = Box::new(Some(res));
-                        debug!("core1 write some");
                         self.fifo.write_blocking(Box::into_raw(boxed) as u32);
                     }
                     let none = Box::new(Option::<String>::None);
-                    debug!("core1 write none");
                     self.fifo.write_blocking(Box::into_raw(none) as u32);
                 }
             })],
@@ -161,7 +156,6 @@ fn start_core1(fifo: &mut SioFifo, stack_ptr: *const u32, entry: *const fn()) {
             fifo.drain();
             cortex_m::asm::sev();
         }
-        debug!("core1 start seq: send {:X}", cmd);
         fifo.write_blocking(cmd);
         let response = fifo.read_blocking();
         if cmd == response {
