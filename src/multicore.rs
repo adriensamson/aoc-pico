@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use aoc_pico::shell::{Command, RunningCommand};
 use core::cell::UnsafeCell;
 use core::future::{Future, ready};
-use core::pin::Pin;
+use core::pin::{pin, Pin};
 use cortex_m::asm::wfe;
 use cortex_m::singleton;
 use critical_section::Mutex;
@@ -67,8 +67,8 @@ impl<C: Command + 'static> MulticoreRunner<C> {
     }
 
     fn run(mut self) -> ! {
-        myasync::Executor::new(
-            [Box::pin(async move {
+        micro_async::run(
+            [pin!(async move {
                 loop {
                     let addr = self.fifo.read_blocking() as *mut (Vec<String>, Vec<String>);
                     let line = unsafe { Box::from_raw(addr) };
@@ -84,7 +84,6 @@ impl<C: Command + 'static> MulticoreRunner<C> {
             })],
             wfe,
         )
-        .run()
     }
 }
 

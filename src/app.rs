@@ -2,10 +2,9 @@ use crate::MutexInputQueue;
 use crate::dma::TimeoutDmaReader;
 use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
 use crate::multicore::create_multicore_runner;
-use alloc::boxed::Box;
 use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
-use core::future::Future;
+use core::pin::pin;
 use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
@@ -21,20 +20,6 @@ pub const XOSC_CRYSTAL_FREQ: u32 = 12_000_000;
 
 #[rp2040_hal::entry]
 fn entry() -> ! {
-    let futures = init();
-
-    unsafe {
-        NVIC::unmask(Interrupt::DMA_IRQ_0);
-        NVIC::unmask(Interrupt::DMA_IRQ_1);
-        NVIC::unmask(Interrupt::UART0_IRQ);
-        NVIC::unmask(Interrupt::TIMER_IRQ_0);
-    }
-
-    debug!("stack pointer: {:x}", read_sp());
-    myasync::Executor::new(futures, wfi).run()
-}
-
-fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
     debug!("init");
     unsafe { init_heap() };
     install_core0_stack_guard();
@@ -92,8 +77,16 @@ fn init() -> [core::pin::Pin<Box<dyn Future<Output = ()>>>; 2] {
         |v| console_input.push(v),
     );
 
-    [
-        Box::pin(crate::run_console(console, uart_tx, dma_chans.ch0)),
-        Box::pin(double_dma.run()),
-    ]
+    unsafe {
+        NVIC::unmask(Interrupt::DMA_IRQ_0);
+        NVIC::unmask(Interrupt::DMA_IRQ_1);
+        NVIC::unmask(Interrupt::UART0_IRQ);
+        NVIC::unmask(Interrupt::TIMER_IRQ_0);
+    }
+
+    debug!("stack pointer: {:x}", read_sp());
+    micro_async::run([
+        pin!(crate::run_console(console, uart_tx, dma_chans.ch0)),
+        pin!(double_dma.run()),
+    ], wfi);
 }
