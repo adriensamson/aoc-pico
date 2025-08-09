@@ -16,7 +16,7 @@ pub struct AocDay16 {
 
 impl AocDay for AocDay16 {
     fn new(input: Vec<String>) -> Self {
-        crate::debug_heap_size();
+        crate::debug_heap_size("new");
         let mut walls = BTreeSet::new();
         let mut start = Coord::default();
         let mut end = Coord::default();
@@ -82,7 +82,7 @@ impl AocDay for AocDay16 {
     }
 
     fn part1(&self) -> String {
-        crate::debug_heap_size();
+        crate::debug_heap_size("part1");
         let start = State {
             position: self.start,
             direction: Direction::Right,
@@ -118,7 +118,7 @@ impl AocDay for AocDay16 {
     }
 
     fn part2(&self) -> String {
-        crate::debug_heap_size();
+        crate::debug_heap_size("part2");
         let start = State {
             position: self.start,
             direction: Direction::Right,

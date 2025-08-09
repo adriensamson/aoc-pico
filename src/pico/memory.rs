@@ -19,11 +19,11 @@ pub(crate) unsafe fn init_heap() {
 }
 
 #[allow(unused)]
-pub fn debug_heap_size() {
+pub fn debug_heap_size(place: &str) {
     let used = HEAP.used();
     let free = HEAP.free();
     let percent = 100 * used / (used + free);
-    debug!("HEAP usage: {}k ({}%)", used / 1024, percent);
+    debug!("HEAP usage as {}: {}k ({}%)", place, used / 1024, percent);
 }
 
 #[inline(always)]
