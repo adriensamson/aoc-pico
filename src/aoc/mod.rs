@@ -1,10 +1,3 @@
-use crate::aoc::day1::AocDay1;
-use crate::aoc::day2::AocDay2;
-use crate::aoc::day3::AocDay3;
-use crate::aoc::day4::AocDay4;
-use crate::aoc::day5::AocDay5;
-use crate::aoc::day6::AocDay6;
-use crate::aoc::day7::AocDay7;
 use aoc_pico::shell::{Command, RunningCommand};
 use alloc::boxed::Box;
 use alloc::format;
@@ -12,6 +5,15 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::future::{Future, ready};
 use core::pin::Pin;
+use crate::aoc::day1::AocDay1;
+use crate::aoc::day2::AocDay2;
+use crate::aoc::day3::AocDay3;
+use crate::aoc::day4::AocDay4;
+use crate::aoc::day5::AocDay5;
+use crate::aoc::day6::AocDay6;
+use crate::aoc::day7::AocDay7;
+use crate::aoc::day8::AocDay8;
+use crate::aoc::day9::AocDay9;
 use crate::aoc::day10::AocDay10;
 use crate::aoc::day11::AocDay11;
 use crate::aoc::day12::AocDay12;
@@ -20,8 +22,14 @@ use crate::aoc::day14::AocDay14;
 use crate::aoc::day15::AocDay15;
 use crate::aoc::day16::AocDay16;
 use crate::aoc::day17::AocDay17;
-use crate::aoc::day8::AocDay8;
-use crate::aoc::day9::AocDay9;
+use crate::aoc::day18::AocDay18;
+use crate::aoc::day19::AocDay19;
+use crate::aoc::day20::AocDay20;
+use crate::aoc::day21::AocDay21;
+use crate::aoc::day22::AocDay22;
+use crate::aoc::day23::AocDay23;
+use crate::aoc::day24::AocDay24;
+use crate::aoc::day25::AocDay25;
 
 pub mod coord;
 
@@ -42,6 +50,14 @@ mod day14;
 mod day15;
 mod day16;
 mod day17;
+mod day18;
+mod day19;
+mod day20;
+mod day21;
+mod day22;
+mod day23;
+mod day24;
+mod day25;
 
 pub struct AocRunner;
 
@@ -84,7 +100,7 @@ impl Command for AocRunner {
 
 type AocDayFn = fn(Vec<String>) -> Box<dyn RunningCommand>;
 
-const NB_DAYS: usize = 1 + 17;
+const NB_DAYS: usize = 1 + 25;
 const DAYS: [AocDayFn; NB_DAYS] = [
     TestDay0::run,
     AocDay1::run,
@@ -104,6 +120,14 @@ const DAYS: [AocDayFn; NB_DAYS] = [
     AocDay15::run,
     AocDay16::run,
     AocDay17::run,
+    AocDay18::run,
+    AocDay19::run,
+    AocDay20::run,
+    AocDay21::run,
+    AocDay22::run,
+    AocDay23::run,
+    AocDay24::run,
+    AocDay25::run,
 ];
 
 trait AocDay: Send + Sized
