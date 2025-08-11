@@ -23,7 +23,7 @@ pub fn debug_heap_size(place: &str) {
     let used = HEAP.used();
     let free = HEAP.free();
     let percent = 100 * used / (used + free);
-    debug!("HEAP usage as {}: {}k ({}%)", place, used / 1024, percent);
+    debug!("HEAP usage at {}: {}k ({}%)", place, used / 1024, percent);
 }
 
 #[inline(always)]

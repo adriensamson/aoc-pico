@@ -180,23 +180,142 @@ impl AocDay for AocDay17 {
 enum Bit {
     Zero,
     One,
-    A(u8),
-    NotA(u8),
+}
+
+impl core::ops::Not for Bit {
+    type Output = Bit;
+    fn not(self) -> Self::Output {
+        match self {
+            Bit::Zero => Bit::One,
+            Bit::One => Bit::Zero,
+        }
+    }
 }
 
 impl core::ops::BitXor for Bit {
-    type Output = Result<Self, ()>;
+    type Output = Bit;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        if self == rhs { Self::Zero } else { Self::One }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
+struct XoredA {
+    a: Bitmask,
+    not_a: Bitmask,
+}
+
+impl XoredA {
+    fn new(i: u8) -> Self {
+        let mut res = Self::default();
+        res.a.set_bit(i);
+        res
+    }
+
+    fn apply_constraints(&mut self, constraints: &Constraints) {
+        let mut should_inv = false;
+        for b in 0..NBITS as u8 {
+            if let Constraint::Fixed(bit) = constraints.get_bit(b) {
+                match bit {
+                    Bit::Zero => {
+                        self.a.clear_bit(b);
+                        if self.not_a.get_bit(b) {
+                            self.not_a.clear_bit(b);
+                            should_inv = !should_inv;
+                        }
+                    },
+                    Bit::One => {
+                        self.not_a.clear_bit(b);
+                        if self.a.get_bit(b) {
+                            self.a.clear_bit(b);
+                            should_inv = !should_inv;
+                        }
+                    }
+                }
+            }
+        }
+        if should_inv {
+            *self = !*self
+        }
+    }
+
+    fn iter_bits(&self) -> impl Iterator<Item=(u8, Bit)> {
+        (0..NBITS as u8).filter_map(|bit| {
+            if self.a.get_bit(bit) && !self.not_a.get_bit(bit) {
+                Some((bit, Bit::Zero))
+            } else if self.not_a.get_bit(bit) && !self.a.get_bit(bit) {
+                Some((bit, Bit::One))
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl core::ops::Not for XoredA {
+    type Output = XoredA;
+    fn not(self) -> Self::Output {
+        Self {
+            a: self.not_a,
+            not_a: self.a,
+        }
+    }
+}
+
+impl core::ops::BitXor for XoredA {
+    type Output = XoredA;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self {
+            a: self.a ^ rhs.a,
+            not_a: self.not_a ^ rhs.not_a,
+        }
+    }
+}
+
+impl From<XoredA> for ExprBit {
+    fn from(value: XoredA) -> Self {
+        if value.a == value.not_a {
+            ExprBit::Known(if value.a.0.count_ones() % 2 == 0 {
+                Bit::Zero
+            } else {
+                Bit::One
+            })
+        } else {
+            ExprBit::XoredA(value)
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum ExprBit {
+    Known(Bit),
+    XoredA(XoredA),
+}
+
+impl ExprBit {
+    const ZERO : Self = Self::Known(Bit::Zero);
+    const ONE : Self = Self::Known(Bit::One);
+}
+
+impl core::ops::BitXor<Bit> for ExprBit {
+    type Output = Self;
+    fn bitxor(self, other: Bit) -> Self::Output {
+        if other == Bit::Zero {
+            return self;
+        }
+        match self {
+            Self::Known(bit) => Self::Known(!bit),
+            Self::XoredA(xoreda) => Self::XoredA(!xoreda),
+        }
+    }
+}
+
+impl core::ops::BitXor for ExprBit {
+    type Output = Self;
     fn bitxor(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Bit::Zero, other) | (other, Bit::Zero) => Ok(other),
-            (Bit::One, Bit::One) => Ok(Bit::Zero),
-            (Bit::A(a), Bit::One) | (Bit::One, Bit::A(a)) => Ok(Bit::NotA(a)),
-            (Bit::NotA(a), Bit::One) | (Bit::One, Bit::NotA(a)) => Ok(Bit::A(a)),
-            (Bit::A(a), Bit::A(b)) if a == b => Ok(Bit::Zero),
-            (Bit::NotA(a), Bit::NotA(b)) if a == b => Ok(Bit::Zero),
-            (Bit::A(a), Bit::NotA(b)) if a == b => Ok(Bit::One),
-            (Bit::NotA(a), Bit::A(b)) if a == b => Ok(Bit::One),
-            _ => Err(())
+            (ExprBit::Known(bit), other) | (other, ExprBit::Known(bit)) => other ^ bit,
+            (ExprBit::XoredA(a), ExprBit::XoredA(b)) => (a ^ b).into(),
         }
     }
 }
@@ -204,103 +323,59 @@ impl core::ops::BitXor for Bit {
 const NBITS : usize = 48;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct Expr([Bit; NBITS]);
+struct Expr([ExprBit; NBITS]);
 
 impl Expr {
     fn a() -> Self {
-        Self(core::array::from_fn(|i| Bit::A(i as u8)))
+        Self(core::array::from_fn(|i| ExprBit::XoredA(XoredA::new(i as u8))))
     }
 
     fn zero() -> Self {
-        Self([Bit::Zero; NBITS])
+        Self([ExprBit::ZERO; NBITS])
     }
 
     fn literal3(i: u8) -> Self {
         let mut lit = Self::zero();
         if i & 1 == 1 {
-            lit.0[0] = Bit::One;
+            lit.0[0] = ExprBit::ONE;
         }
         if i & 2 == 2 {
-            lit.0[1] = Bit::One;
+            lit.0[1] = ExprBit::ONE;
         }
         if i & 4 == 4 {
-            lit.0[2] = Bit::One;
+            lit.0[2] = ExprBit::ONE;
         }
         lit
     }
 
     fn mod8(&mut self) {
         for b in 3..NBITS {
-            self.0[b] = Bit::Zero;
+            self.0[b] = ExprBit::ZERO;
         }
     }
 
     fn shift_right(&mut self, s: usize) {
         self.0.rotate_left(s);
         for b in NBITS-s..NBITS {
-            self.0[b] = Bit::Zero;
+            self.0[b] = ExprBit::ZERO;
         }
     }
 
-    fn xor(&self, rhs: Expr) -> Result<Expr, Vec<(Constraints, Expr)>> {
+    fn xor(&self, rhs: Expr) -> Self {
         crate::memory::debug_heap_size("start inner xor");
-        let mut results = vec![(Constraints::none(), Expr::zero())];
+        let mut res = Expr::zero();
         for b in 0..NBITS {
-            match self.0[b] ^ rhs.0[b] {
-                Ok(bit) => results.iter_mut().for_each(|res| res.1.0[b] = bit),
-                Err(()) => {
-                    let s = format!("{:?} XOR {:?}", self.0, rhs.0);
-                    debug!("{}", s.as_str());
-                    let (b2, inv) = match self.0[b] {
-                        Bit::A(b2) => (b2, false),
-                        Bit::NotA(b2) => (b2, true),
-                        _ => unreachable!(),
-                    };
-                    let mut opposite = Vec::new();
-                    for res in &mut results {
-                        match res.0.get_bit(b2) {
-                            Constraint::None => {
-                                res.0.set_bit(b2, if inv { Constraint::One } else { Constraint::Zero });
-                                res.1.0[b2 as usize] = rhs.0[b];
-                                let mut opp = res.clone();
-                                opp.0.set_bit(b2, if inv { Constraint::Zero } else { Constraint::One });
-                                opp.1.0[b2 as usize] = (Bit::One ^ rhs.0[b]).unwrap();
-                                opposite.push(opp);
-                            },
-                            Constraint::Zero => {
-                                res.1.0[b2 as usize] = if inv { (Bit::One ^ rhs.0[b]).unwrap() } else { rhs.0[b] };
-                            }
-                            Constraint::One => {
-                                res.1.0[b2 as usize] = if !inv { (Bit::One ^ rhs.0[b]).unwrap() } else { rhs.0[b] };
-                            }
-                        }
-                    }
-                    results.extend(opposite);
-                }
-            }
+            res.0[b] = self.0[b] ^ rhs.0[b];
         }
         crate::memory::debug_heap_size("end inner xor");
-        if results.len() == 1 {
-            Ok(results.into_iter().next().unwrap().1)
-        } else {
-            Err(results)
-        }
+        res
     }
 
     fn apply_constraints(&mut self, constraints: &Constraints) {
         for b in &mut self.0 {
-            if let Bit::A(i) = b {
-                match constraints.get_bit(*i) {
-                    Constraint::None => {},
-                    Constraint::Zero => *b = Bit::Zero,
-                    Constraint::One => *b = Bit::One,
-                }
-            } else if let Bit::NotA(i) = b {
-                match constraints.get_bit(*i) {
-                    Constraint::None => {},
-                    Constraint::Zero => *b = Bit::One,
-                    Constraint::One => *b = Bit::Zero,
-                }
+            if let ExprBit::XoredA(x) = b {
+                x.apply_constraints(constraints);
+                *b = (*x).into();
             }
         }
     }
@@ -309,11 +384,10 @@ impl Expr {
         let mut res = Constraints::none();
         for b in 0..NBITS {
             let bit = if b < 3 { (i >> b) & 1 } else { 0 };
+            let bit = if bit == 1 { Bit::One } else { Bit::Zero };
             match self.0[b] {
-                Bit::A(a) => res.set_bit(a, if bit == 1 { Constraint::One } else { Constraint::Zero }),
-                Bit::NotA(a) => res.set_bit(a, if bit == 0 { Constraint::One } else { Constraint::Zero }),
-                Bit::One if bit == 0 => return None,
-                Bit::Zero if bit == 1 => return None,
+                ExprBit::XoredA(x) => todo!("{:?}", x),
+                ExprBit::Known(bit2) if bit2 != bit => return None,
                 _ => {}
             }
         }
@@ -328,19 +402,18 @@ impl TryFrom<Expr> for usize {
         let mut cases = vec![(Constraints::none(), 0)];
         for (i, bit) in value.0.iter().enumerate() {
             match bit {
-                Bit::One => cases.iter_mut().for_each(|c| c.1 |= 1 << i),
-                Bit::Zero => {},
-                Bit::A(a) => {
-                    cases.iter_mut().for_each(|c| c.0.set_bit(*a, Constraint::Zero));
-                    let mut ones = cases.clone();
-                    ones.iter_mut().for_each(|c| {c.0.set_bit(*a, Constraint::One); c.1 |= 1 << i});
-                    cases.extend(ones)
-                },
-                Bit::NotA(a) => {
-                    cases.iter_mut().for_each(|c| c.0.set_bit(*a, Constraint::One));
-                    let mut ones = cases.clone();
-                    ones.iter_mut().for_each(|c| {c.0.set_bit(*a, Constraint::Zero); c.1 |= 1 << i});
-                    cases.extend(ones)
+                ExprBit::Known(Bit::One) => cases.iter_mut().for_each(|c| c.1 |= 1 << i),
+                ExprBit::Known(Bit::Zero) => {},
+                ExprBit::XoredA(a) => {
+                    for (ab, fb) in a.iter_bits() {
+                        cases.iter_mut().for_each(|c| c.0.set_bit(ab, Constraint::Fixed(fb)));
+                        let mut ones = cases.clone();
+                        ones.iter_mut().for_each(|c| {
+                            c.0.set_bit(ab, Constraint::Fixed(!fb));
+                            c.1 |= 1 << i
+                        });
+                        cases.extend(ones)
+                    }
                 },
             }
         }
@@ -355,11 +428,10 @@ impl TryFrom<Expr> for usize {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum Constraint {
     None,
-    One,
-    Zero,
+    Fixed(Bit),
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 struct Bitmask(u64);
 impl Bitmask {
     fn get_bit(&self, i: u8) -> bool {
@@ -370,6 +442,13 @@ impl Bitmask {
     }
     fn clear_bit(&mut self, i: u8) {
         self.0 &= !(1 << i);
+    }
+}
+
+impl core::ops::BitXor for Bitmask {
+    type Output = Self;
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Self(self.0 ^ rhs.0)
     }
 }
 
@@ -386,9 +465,9 @@ impl Constraints {
 
     fn get_bit(&self, b: u8) -> Constraint {
         if self.ones.get_bit(b) {
-            Constraint::One
+            Constraint::Fixed(Bit::One)
         } else if self.zeros.get_bit(b) {
-            Constraint::Zero
+            Constraint::Fixed(Bit::Zero)
         } else {
             Constraint::None
         }
@@ -396,11 +475,11 @@ impl Constraints {
 
     fn set_bit(&mut self, b: u8, c: Constraint) {
         match c {
-            Constraint::One => {
+            Constraint::Fixed(Bit::One) => {
                 self.ones.set_bit(b);
                 self.zeros.clear_bit(b);
             },
-            Constraint::Zero => {
+            Constraint::Fixed(Bit::Zero) => {
                 self.zeros.set_bit(b);
                 self.ones.clear_bit(b);
             },
@@ -415,7 +494,7 @@ impl Constraints {
         let mut res = Self::none();
         for i in 0..NBITS as u8 {
             match (self.get_bit(i), other.get_bit(i)) {
-                (Constraint::One, Constraint::Zero) | (Constraint::Zero, Constraint::One) => return None,
+                (Constraint::Fixed(a), Constraint::Fixed(b)) if a != b => return None,
                 (Constraint::None, other) => res.set_bit(i, other),
                 (first, _) => res.set_bit(i, first),
             }
@@ -466,14 +545,7 @@ impl Exprs {
                     let mut right = right_expr.clone();
                     left.apply_constraints(&cons);
                     right.apply_constraints(&cons);
-                    match left.xor(right) {
-                        Ok(expr) => result.push((cons, expr)),
-                        Err(cases) => {
-                            for (right2_cons, e) in cases {
-                                result.push((right2_cons, e));
-                            }
-                        }
-                    }
+                    result.push((cons, left.xor(right)));
                 }
             }
         }
