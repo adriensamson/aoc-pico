@@ -130,10 +130,8 @@ impl AocDay for AocDay16 {
         loop {
             let state = states.iter().min_by_key(|(_, score)| *score).map(|(state, _)| *state).unwrap();
             let score = states.remove(&state).unwrap();
-            if let Some(min) = min_score {
-                if min < score {
-                    break;
-                }
+            if let Some(min) = min_score && min < score {
+                break;
             }
             done.insert(state, score);
             if state.position == self.end {

@@ -118,12 +118,10 @@ fn count_up_sides(plots: impl Iterator<Item=(u8, u8)>) -> usize {
     let mut current_row : Vec<(u8, u8)> = Vec::new();
     let mut current_side : Option<(u8, u8)> = None;
     for p in plots {
-        if let Some(c) = current_row.last().copied() {
-            if c.0 != p.0 {
-                prev_row = current_row;
-                current_row = Vec::new();
-                current_side = None;
-            }
+        if let Some(c) = current_row.last().copied() && c.0 != p.0 {
+            prev_row = current_row;
+            current_row = Vec::new();
+            current_side = None;
         }
         current_row.push(p);
         if prev_row.iter().copied().any(|u| are_neighbours(u, p)) {

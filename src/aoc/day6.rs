@@ -46,7 +46,7 @@ impl Map for AocDay6 {
 }
 
 impl AocDay6 {
-    fn start_pos(&self) -> Position<Self> {
+    fn start_pos(&self) -> Position<'_, Self> {
         Position {
             map: self,
             x: self.start.0,
@@ -135,7 +135,7 @@ impl<'a> OneMoreWall<'a, AocDay6> {
         Self { map, wall }
     }
 
-    fn start_at(&self, x: usize, y: usize, direction: Direction) -> Position<Self> {
+    fn start_at(&self, x: usize, y: usize, direction: Direction) -> Position<'_, Self> {
         Position {
             map: self,
             x,

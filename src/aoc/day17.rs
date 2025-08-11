@@ -47,12 +47,12 @@ impl AocDay for AocDay17 {
             match opcode {
                 0 => {
                     // adv
-                    a = a / (2u32.pow(comboperand));
+                    a /= 2u32.pow(comboperand);
                     ip += 2;
                 },
                 1 => {
                     // bxl
-                    b = b ^ operand as u32;
+                    b ^= operand as u32;
                     ip += 2;
                 },
                 2 => {
@@ -70,7 +70,7 @@ impl AocDay for AocDay17 {
                 },
                 4 => {
                     // bxc
-                    b = b ^ c;
+                    b ^= c;
                     ip += 2;
                 },
                 5 => {

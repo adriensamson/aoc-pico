@@ -293,7 +293,7 @@ const COLS : usize = 128;
 const ROWS : usize = 256;
 
 impl<I: AsyncInputIterator> Console<I> {
-    pub async fn next_wait(&mut self) -> (Cow<[u8]>, Cow<[u8]>) {
+    pub async fn next_wait(&mut self) -> (Cow<'_, [u8]>, Cow<'_, [u8]>) {
         match core::mem::replace(&mut self.state, ConsoleState::Poisoned) {
             ConsoleState::RunCommand { cmd_line, input } => {
                 let mut args_iter = cmd_line.trim().split(' ').map(str::trim);
