@@ -21,7 +21,11 @@ pub async fn main() {
         let mut buffer = vec![0u8; 1024];
         loop {
             if let Ok(len) = stdin.read(buffer.as_mut()).await {
-                queue.push(buffer[..len].into());
+                let str = &buffer[..len];
+                if str.contains(&b'\x03') {
+                    break;
+                }
+                queue.push(str.into());
             }
         }
     };
@@ -32,7 +36,11 @@ pub async fn main() {
             stdout.write_all(&buf2[..]).await.unwrap();
         }
     };
-    tokio::join!(input_loop, output_loop);
+    tokio::select!(
+        _ = input_loop => (),
+        _ = output_loop => ()
+    );
+    crossterm::terminal::disable_raw_mode().unwrap();
 }
 
 pub fn debug_heap_size() {}
