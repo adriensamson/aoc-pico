@@ -20,7 +20,7 @@ micro-async = {git = "https://github.com/adriensamson/micro-async.git", features
 rp2040-async = {git = "https://github.com/adriensamson/rp2040-async.git", features = ["timer0", "dma0", "dma1", "uart0"]}
 
 [target.'cfg(target_os="linux")'.dependencies]
-tokio = { version = "1.47.1", features = ["macros", "rt", "io-std", "io-util"] }
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "io-std", "io-util", "sync"] }
 crossterm = { version = "0.29.0" }
 futures = "0.3.31"
 

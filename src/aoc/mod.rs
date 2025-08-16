@@ -75,13 +75,13 @@ impl Default for AocRunner {
 
 struct ErrRunningCommand(Option<String>);
 impl RunningCommand for ErrRunningCommand {
-    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>> {
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
         Box::pin(ready(self.0.take()))
     }
 }
 
 impl Command for AocRunner {
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
+    fn exec(&self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
         let day = args
             .first()
             .map(String::as_str)
@@ -151,7 +151,7 @@ where
 struct RunningAoc<D: AocDay>(D, u8);
 
 impl<D: AocDay> RunningCommand for RunningAoc<D> {
-    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>> {
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
         match self.1 {
             0 => {
                 self.1 = 1;
