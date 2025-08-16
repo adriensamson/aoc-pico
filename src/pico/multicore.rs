@@ -1,4 +1,4 @@
-use crate::memory::install_core1_stack_guard;
+use crate::pico::memory::install_core1_stack_guard;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -8,7 +8,7 @@ use core::future::{Future, ready};
 use core::pin::{pin, Pin};
 use cortex_m::singleton;
 use critical_section::Mutex;
-use defmt::debug;
+use crate::debug;
 use rp2040_hal::Sio;
 use rp2040_hal::pac::Peripherals;
 use rp2040_hal::sio::SioFifo;

@@ -1,5 +1,5 @@
 use cortex_m_rt::heap_start;
-use defmt::debug;
+use crate::debug;
 use embedded_alloc::LlffHeap as Heap;
 
 #[global_allocator]

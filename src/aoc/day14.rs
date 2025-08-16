@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::format;
 use alloc::collections::BTreeSet;
-use defmt::debug;
+use crate::debug;
 use crate::aoc::AocDay;
 
 pub struct AocDay14 {

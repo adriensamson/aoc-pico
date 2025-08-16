@@ -407,30 +407,55 @@ impl<I: AsyncInputIterator> Console<I> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(target_os = "linux")]
+mod linux {
+    extern crate std;
     use alloc::rc::Rc;
     use std::collections::VecDeque;
+    use std::future::poll_fn;
     use std::prelude::rust_2015::Vec;
     use std::sync::Mutex;
+    use std::task::Poll;
+    use super::{AsyncInputQueue, InputQueue};
 
     #[derive(Clone)]
-    struct MutexQueue(Rc<Mutex<VecDeque<Vec<u8>>>>);
+    pub struct MutexQueue(Rc<Mutex<(VecDeque<Vec<u8>>, Option<std::task::Waker>)>>);
     impl MutexQueue {
-        fn new() -> Self {
-            Self(Rc::new(Mutex::new(VecDeque::new())))
+        pub fn new() -> Self {
+            Self(Rc::new(Mutex::new((VecDeque::new(), None))))
         }
 
-        fn push(&self, input: Vec<u8>) {
-            self.0.lock().unwrap().push_back(input.into());
+        pub fn push(&self, input: Vec<u8>) {
+            let mut inner = self.0.lock().unwrap();
+            inner.0.push_back(input.into());
+            inner.1.take().map(|waker| waker.wake());
         }
     }
     impl InputQueue for MutexQueue {
         fn pop(&mut self) -> Option<Vec<u8>> {
-            self.0.lock().unwrap().pop_front()
+            self.0.lock().unwrap().0.pop_front()
         }
     }
+    impl AsyncInputQueue for MutexQueue {
+        async fn pop_wait(&mut self) -> Vec<u8> {
+            poll_fn(|ctx| {
+                match self.pop() {
+                    Some(buf) => Poll::Ready(buf),
+                    None => {
+                        self.0.lock().unwrap().1 = Some(ctx.waker().clone());
+                        Poll::Pending
+                    },
+                }
+            }).await
+        }
+    }
+}
+#[cfg(target_os = "linux")]
+pub use linux::*;
+
+#[cfg(all(target_os = "linux", test))]
+mod tests {
+    use super::*;
 
     #[test]
     fn test_input_parser() {

@@ -1,13 +1,13 @@
-use crate::MutexInputQueue;
-use crate::dma::TimeoutDmaReader;
-use crate::memory::{init_heap, install_core0_stack_guard, read_sp};
-use crate::multicore::create_multicore_runner;
+use crate::pico::{run_console, MutexInputQueue};
+use crate::pico::dma::TimeoutDmaReader;
+use crate::pico::memory::{init_heap, install_core0_stack_guard, read_sp};
+use crate::pico::multicore::create_multicore_runner;
 use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
 use core::pin::pin;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
-use defmt::debug;
+use crate::debug;
 use rp2040_async::timer::AsyncAlarm;
 use rp2040_hal::clocks::init_clocks_and_plls;
 use rp2040_hal::dma::{DMAExt, SingleChannel};
@@ -87,7 +87,7 @@ fn entry() -> ! {
 
     use micro_async::{RunLoop, Wfi};
     Wfi::run_loop([
-        pin!(crate::run_console(console, uart_tx, dma_chans.ch0)),
+        pin!(run_console(console, uart_tx, dma_chans.ch0)),
         pin!(double_dma.run()),
     ])
 }
