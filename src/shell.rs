@@ -213,11 +213,11 @@ impl State {
 }*/
 
 pub trait RunningCommand: Send {
-    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>>;
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>>;
 }
 
 pub trait Command {
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand>;
+    fn exec(&self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand>;
 }
 
 #[derive(Default)]
