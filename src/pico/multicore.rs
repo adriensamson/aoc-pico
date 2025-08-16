@@ -14,15 +14,17 @@ use rp2040_hal::pac::Peripherals;
 use rp2040_hal::sio::SioFifo;
 
 pub struct MulticoreProxy {
-    pub fifo: &'static mut SioFifo,
+    pub fifo: *mut SioFifo,
 }
 
+unsafe impl Send for MulticoreProxy {}
+
 impl Command for MulticoreProxy {
-    fn exec(&mut self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
+    fn exec(&self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
         let boxed = Box::new((args, input));
         let ptr = Box::into_raw(boxed);
-        self.fifo.write_blocking(ptr as u32);
-        let fifo: &'static mut SioFifo = unsafe { core::mem::transmute(&mut self.fifo) };
+        unsafe {(&mut *self.fifo).write_blocking(ptr as u32)};
+        let fifo: &'static mut SioFifo = unsafe { &mut *self.fifo };
         Box::new(MulticoreReceiver::new(fifo))
     }
 }
@@ -42,7 +44,7 @@ impl MulticoreReceiver {
 }
 
 impl RunningCommand for MulticoreReceiver {
-    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>>>> {
+    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
         if self.finished {
             return Box::pin(ready(None));
         }
