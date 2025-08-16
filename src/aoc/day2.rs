@@ -88,7 +88,7 @@ fn tolerate_one_bad(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(target_os = "linux", test))]
 mod test {
     use crate::aoc::AocDay;
     use crate::aoc::day2::AocDay2;

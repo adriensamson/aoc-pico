@@ -4,7 +4,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format};
 use core::ops::{RangeBounds};
-use defmt::debug;
+use crate::debug;
 use crate::aoc::AocDay;
 use crate::aoc::coord::{Coord, Direction};
 
@@ -16,7 +16,7 @@ pub struct AocDay16 {
 
 impl AocDay for AocDay16 {
     fn new(input: Vec<String>) -> Self {
-        crate::memory::debug_heap_size();
+        crate::debug_heap_size();
         let mut walls = BTreeSet::new();
         let mut start = Coord::default();
         let mut end = Coord::default();
@@ -82,7 +82,7 @@ impl AocDay for AocDay16 {
     }
 
     fn part1(&self) -> String {
-        crate::memory::debug_heap_size();
+        crate::debug_heap_size();
         let start = State {
             position: self.start,
             direction: Direction::Right,
@@ -118,7 +118,7 @@ impl AocDay for AocDay16 {
     }
 
     fn part2(&self) -> String {
-        crate::memory::debug_heap_size();
+        crate::debug_heap_size();
         let start = State {
             position: self.start,
             direction: Direction::Right,

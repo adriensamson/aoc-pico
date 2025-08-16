@@ -234,7 +234,7 @@ impl AocDay for AocDay6 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(target_os = "linux", test))]
 mod test {
     use super::*;
     use alloc::string::ToString;

@@ -89,7 +89,7 @@ impl AocDay for AocDay5 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(target_os = "linux", test))]
 mod test {
     use crate::aoc::AocDay;
     use crate::aoc::day5::AocDay5;
