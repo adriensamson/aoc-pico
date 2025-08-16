@@ -25,19 +25,25 @@ impl AocDay for AocDay19 {
         let available_set : BTreeSet<&str> = self.available_towels.iter().map(String::as_str).collect();
         let max_len = available_set.iter().map(|s| s.len()).max().unwrap();
         let n = self.patterns.iter().filter(|pattern| {
-            let mut backtrack = vec![(pattern.as_str(), max_len+1)];
-            while let Some((rest, prev_len)) = backtrack.pop() {
+            let pattern = pattern.as_str();
+            let mut backtrack = vec![(0, max_len+1)];
+            let mut impossible_ends : BTreeSet<usize> = BTreeSet::new();
+            while let Some((start, prev_len)) = backtrack.pop() {
+                let rest = &pattern[start..];
+                if impossible_ends.contains(&rest.len()) {
+                    continue;
+                }
                 for i in (1..prev_len.min(rest.len() + 1)).rev() {
                     if available_set.contains(&rest[0..i]) {
-                        backtrack.push((rest, i));
-                        let rest = &rest[i..];
-                        if rest.is_empty() {
+                        backtrack.push((start, i));
+                        if rest[i..].is_empty() {
                             return true;
                         }
-                        backtrack.push((rest, max_len+1));
+                        backtrack.push((start + i, max_len+1));
                         break;
                     }
                 }
+                impossible_ends.insert(rest.len());
             }
             false
         }).count();
