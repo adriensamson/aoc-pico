@@ -1,10 +1,8 @@
-use aoc_pico::shell::{Command, RunningCommand};
+use aoc_pico::shell::{SyncCommand, SyncRunningCommand};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::future::{Future, ready};
-use core::pin::Pin;
 use crate::aoc::day1::AocDay1;
 use crate::aoc::day2::AocDay2;
 use crate::aoc::day3::AocDay3;
@@ -74,14 +72,15 @@ impl Default for AocRunner {
 }
 
 struct ErrRunningCommand(Option<String>);
-impl RunningCommand for ErrRunningCommand {
-    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
-        Box::pin(ready(self.0.take()))
+impl SyncRunningCommand for ErrRunningCommand {
+    fn next_sync(&mut self) -> Option<String> {
+        self.0.take()
     }
 }
 
-impl Command for AocRunner {
-    fn exec(&self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
+impl SyncCommand for AocRunner {
+    type RunningCommand = Box<dyn SyncRunningCommand>;
+    fn exec_sync(&self, args: Vec<String>, input: Vec<String>) -> Self::RunningCommand {
         let day = args
             .first()
             .map(String::as_str)
@@ -94,11 +93,11 @@ impl Command for AocRunner {
         if day >= NB_DAYS {
             return Box::new(ErrRunningCommand(Some(String::from("bad day"))));
         }
-        DAYS[day](input)
+        Box::new(DAYS[day](input))
     }
 }
 
-type AocDayFn = fn(Vec<String>) -> Box<dyn RunningCommand>;
+type AocDayFn = fn(Vec<String>) -> Box<dyn SyncRunningCommand + 'static>;
 
 const NB_DAYS: usize = 1 + 25;
 const DAYS: [AocDayFn; NB_DAYS] = [
@@ -143,29 +142,29 @@ where
         String::new()
     }
 
-    fn run(input: Vec<String>) -> Box<dyn RunningCommand> {
+    fn run(input: Vec<String>) -> Box<dyn SyncRunningCommand> {
         Box::new(RunningAoc(Self::new(input), 0))
     }
 }
 
 struct RunningAoc<D: AocDay>(D, u8);
 
-impl<D: AocDay> RunningCommand for RunningAoc<D> {
-    fn next(&mut self) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
+impl<D: AocDay> SyncRunningCommand for RunningAoc<D> {
+    fn next_sync(&mut self) -> Option<String> {
         match self.1 {
             0 => {
                 self.1 = 1;
-                Box::pin(ready(Some(String::from("running..."))))
+                Some(String::from("running..."))
             }
             1 => {
                 self.1 = 2;
-                Box::pin(ready(Some(format!("Part1: {}", self.0.part1()))))
+                Some(format!("Part1: {}", self.0.part1()))
             }
             2 => {
                 self.1 = 3;
-                Box::pin(ready(Some(format!("Part2: {}", self.0.part2()))))
+                Some(format!("Part2: {}", self.0.part2()))
             }
-            _ => Box::pin(ready(None)),
+            _ => None,
         }
     }
 }

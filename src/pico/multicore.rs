@@ -2,7 +2,7 @@ use crate::pico::memory::install_core1_stack_guard;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
-use aoc_pico::shell::{Command, RunningCommand};
+use aoc_pico::shell::{Command, RunningCommand, SyncCommand};
 use core::cell::UnsafeCell;
 use core::future::{Future, ready};
 use core::pin::{pin, Pin};
@@ -90,7 +90,7 @@ impl<C: Command + 'static> MulticoreRunner<C> {
 
 pub fn create_multicore_runner(
     fifo0: SioFifo,
-    runner: impl Command + Send + 'static,
+    runner: impl SyncCommand + Send + 'static,
 ) -> MulticoreProxy {
     let f = move || {
         let fifo1 = unsafe { Sio::new(Peripherals::steal().SIO).fifo };
