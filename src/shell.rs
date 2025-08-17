@@ -5,6 +5,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::future::Future;
 use core::pin::Pin;
+use core::future::ready;
 
 #[allow(dead_code)]
 #[derive(Eq, PartialEq, Debug)]
@@ -218,6 +219,33 @@ pub trait RunningCommand: Send {
 
 pub trait Command {
     fn exec(&self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand>;
+}
+
+pub trait SyncCommand {
+    type RunningCommand: SyncRunningCommand + 'static;
+    fn exec_sync(&self, args: Vec<String>, input: Vec<String>) -> Self::RunningCommand;
+}
+
+impl<S: SyncCommand> Command for S {
+    fn exec(&self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
+        Box::new(self.exec_sync(args, input))
+    }
+}
+
+pub trait SyncRunningCommand: Send {
+    fn next_sync(&mut self) -> Option<String>;
+}
+
+impl SyncRunningCommand for Box<dyn SyncRunningCommand> {
+    fn next_sync(&mut self) -> Option<String> {
+        self.as_mut().next_sync()
+    }
+}
+
+impl<S: SyncRunningCommand> RunningCommand for S {
+    fn next(&mut self) -> Pin<Box<dyn Future<Output=Option<String>> + Send + '_>> {
+        Box::pin(ready(self.next_sync()))
+    }
 }
 
 #[derive(Default)]

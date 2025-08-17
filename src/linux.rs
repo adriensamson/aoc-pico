@@ -2,7 +2,7 @@ extern crate std;
 
 use std::pin::Pin;
 use crate::aoc::AocRunner;
-use aoc_pico::shell::{Command, Commands, Console, InputParser, MutexQueue, RunningCommand};
+use aoc_pico::shell::{Command, Commands, Console, InputParser, MutexQueue, RunningCommand, SyncCommand, SyncRunningCommand};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
@@ -44,24 +44,24 @@ pub async fn main() {
     crossterm::terminal::disable_raw_mode().unwrap();
 }
 
-struct SpawnerCommand<C: Command> {
+struct SpawnerCommand<C: SyncCommand> {
     inner: C,
 }
 
-impl<C: Command> SpawnerCommand<C> {
+impl<C: SyncCommand> SpawnerCommand<C> {
     fn new(inner: C) -> Self {
         Self { inner }
     }
 }
 
-impl<C: Command> Command for SpawnerCommand<C> {
+impl<C: SyncCommand> Command for SpawnerCommand<C> {
     fn exec(&self, args: Vec<String>, input: Vec<String>) -> Box<dyn RunningCommand> {
         let inner = &self.inner;
         let (sender, receiver) = tokio::sync::mpsc::channel(3);
-        let mut running = inner.exec(args, input);
-        tokio::spawn(async move {
-            while let Some(s) = running.next().await {
-                sender.send(s).await.unwrap();
+        let mut running = inner.exec_sync(args, input);
+        tokio::task::spawn_blocking(move || {
+            while let Some(s) = running.next_sync() {
+                sender.blocking_send(s).unwrap();
             }
         });
         Box::new(SpawnedCommand {
