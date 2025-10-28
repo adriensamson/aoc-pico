@@ -347,7 +347,10 @@ checksum = "9afa463f5405ee81cdb9cc2baf37e08ec7e4c8209442b5d72c04cfb2cd6e6286"
 [[package]]
 name = "micro-async"
 version = "0.1.0"
-source = "git+https://github.com/adriensamson/micro-async.git#9e967127a19cb770ea25dad34918838ab2d4830d"
+source = "git+https://github.com/adriensamson/micro-async.git#c8cd6c85a5742307e64a2706a4fa864f01f572ae"
+dependencies = [
+ "cortex-m",
+]
 
 [[package]]
 name = "nb"

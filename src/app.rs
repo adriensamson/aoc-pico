@@ -5,7 +5,6 @@ use crate::multicore::create_multicore_runner;
 use crate::aoc::AocRunner;
 use aoc_pico::shell::{Commands, Console, InputParser};
 use core::pin::pin;
-use cortex_m::asm::wfi;
 use cortex_m::peripheral::NVIC;
 use cortex_m::singleton;
 use defmt::debug;
@@ -85,8 +84,10 @@ fn entry() -> ! {
     }
 
     debug!("stack pointer: {:x}", read_sp());
-    micro_async::run([
+
+    use micro_async::{RunLoop, Wfi};
+    Wfi::run_loop([
         pin!(crate::run_console(console, uart_tx, dma_chans.ch0)),
         pin!(double_dma.run()),
-    ], wfi);
+    ])
 }
