@@ -290,6 +290,7 @@ const EOL_INPUT : &[u8] = b"\r\n< ";
 const EOL_RUN : &[u8] = b"\r\n> ";
 
 const COLS : usize = 128;
+const COLS_SHRINK : usize = 32;
 const ROWS : usize = 256;
 
 impl<I: AsyncInputIterator> Console<I> {
@@ -326,13 +327,19 @@ impl<I: AsyncInputIterator> Console<I> {
                 mut current_line,
                 ..
             } => match self.input.next_wait().await {
-                Input::Line(s) => {
+                Input::Line(mut s) => {
                     let start = if current_line.is_empty() {
+                        if s.len() < COLS_SHRINK {
+                            s.shrink_to_fit();
+                        }
                         input_lines.push(s);
                         0
                     } else {
                         let start = current_line.len();
                         current_line.push_str(&s);
+                        if current_line.len() < COLS_SHRINK {
+                            current_line.shrink_to_fit();
+                        }
                         input_lines.push(core::mem::replace(&mut current_line, String::with_capacity(COLS)));
                         start
                     };
