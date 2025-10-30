@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -26,6 +27,44 @@ impl AocDay for AocDay21 {
         })
             .sum();
         format!("{}", sum)
+    }
+
+    fn part2(&self) -> String {
+        let mut dir_table : BTreeMap<&str, BTreeMap<&str, usize>> = BTreeMap::new();
+        let mut sum = 0u64;
+        for code in self.codes.iter() {
+            let mut seqs : BTreeMap<&str, u64> = BTreeMap::new();
+            let mut from = 'A';
+            for c in code.chars() {
+                *seqs.entry(num_path(from, c)).or_default() += 1;
+                from = c;
+            }
+            for _ in 0..25 {
+                let mut seqs2 = BTreeMap::new();
+                for (s, n) in seqs {
+                    let dir_seq = dir_table.entry(s).or_insert_with(|| {
+                        let mut s2 = BTreeMap::new();
+                        let mut from = 'A';
+                        for c in s.chars() {
+                            *s2.entry(dir_path(from, c)).or_default() += 1;
+                            from = c;
+                        }
+                        *s2.entry(dir_path(from, 'A')).or_default() += 1;
+                        s2
+                    });
+                    for (s2, n2) in &*dir_seq {
+                        *seqs2.entry(*s2).or_default() += *n2 as u64 * n;
+                    }
+                }
+                seqs = seqs2;
+            }
+            let len = seqs.iter().map(|(s, n)| (s.len() + 1) as u64 * n).sum::<u64>();
+            debug!("{}", len);
+            let n = code[0..3].parse::<usize>().unwrap() as u64;
+            sum += n * len;
+        }
+
+        format!("{sum}")
     }
 }
 
@@ -61,8 +100,8 @@ const fn num_path(from: char, to: char) -> &'static str {
             _ => unreachable!(),
         },
         '1' => match to {
-            '0' => ">v",
-            'A' => ">>v",
+            '0' => "v>",
+            'A' => "v>>",
             '2' => ">",
             '3' => ">>",
             '4' => "^",
@@ -101,7 +140,7 @@ const fn num_path(from: char, to: char) -> &'static str {
         },
         '4' => match to {
             '0' => ">vv",
-            'A' => "<<vv",
+            'A' => ">>vv",
             '1' => "v",
             '2' => "v>",
             '3' => "v>>",
