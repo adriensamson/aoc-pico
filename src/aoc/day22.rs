@@ -1,7 +1,7 @@
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use defmt::debug;
 use crate::aoc::AocDay;
 
 pub struct AocDay22 {
@@ -26,20 +26,22 @@ impl AocDay for AocDay22 {
     }
 
     fn part2(&self) -> String {
-        let mut max = 0;
-        for i in -3..=3 {
-            for j in (-6-i).max(-3)..=(6-i).min(3) {
-                for k in (-6-i-j).max(-3)..=(6-i-j).min(3) {
-                    for l in (-6-i-j-k).max(-3)..=(6-i-j-k).min(3) {
-                        let sum = self.secrets.iter().copied().filter_map(|secret| price_for_seq(secret, [i, j, k, l])).sum();
-                        if sum > max {
-                            debug!("{}, {}, {}, {} => {}", i, j, k, l, sum);
-                            max = sum;
-                        }
-                    }
+        let mut totals : BTreeMap<[i8; 4], u32> = BTreeMap::new();
+        for secret in self.secrets.iter().copied() {
+            let mut changes = [0i8; 4];
+            let mut prices = BTreeMap::new();
+            for (i, (price, change)) in PriceChangeIterator(secret).take(2000).enumerate() {
+                changes.rotate_left(1);
+                changes[3] = change;
+                if i >= 3 && changes.iter().sum::<i8>() >= 0 && total_diff(changes) <= 10 {
+                    prices.entry(changes).or_insert(price);
                 }
             }
+            for (changes, price) in prices {
+                *totals.entry(changes).or_default() += price as u32;
+            }
         }
+        let max = totals.values().max().copied().unwrap();
         format!("{max}")
     }
 }
@@ -51,27 +53,28 @@ fn next_secret(mut secret: u32) -> u32 {
     secret
 }
 
-struct PriceIterator(u32);
-impl Iterator for PriceIterator {
-    type Item = i8;
+struct PriceChangeIterator(u32);
+impl Iterator for PriceChangeIterator {
+    type Item = (u8, i8);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let price = (self.0 % 10) as i8;
+        let prev_price = (self.0 % 10) as u8;
         self.0 = next_secret(self.0);
-        Some(price)
+        let new_price = (self.0 % 10) as u8;
+        let change = (new_price as i8) - (prev_price as i8);
+        Some((new_price, change))
     }
 }
 
-fn price_for_seq(secret: u32, seq: [i8; 4]) -> Option<i32> {
-    let mut changes = [0i8; 4];
-    let mut previous = 0;
-    for (i, price) in PriceIterator(secret).take(2001).enumerate() {
-        changes.rotate_left(1);
-        changes[3] = price - previous;
-        previous = price;
-        if i >= 4 && changes == seq {
-            return Some(price as i32);
+fn total_diff(changes: [i8; 4]) -> i8 {
+    let mut pos_diff = 0;
+    let mut neg_diff = 0;
+    for c in changes {
+        if c >= 0 {
+            pos_diff += c;
+        } else {
+            neg_diff += c;
         }
     }
-    None
+    pos_diff - neg_diff
 }
