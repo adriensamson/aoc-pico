@@ -2,6 +2,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cmp::Reverse;
 use crate::aoc::AocDay;
 
 pub struct AocDay23 {
@@ -38,6 +39,50 @@ impl AocDay for AocDay23 {
         }
 
         format!("{}", sets.len())
+    }
+
+    fn part2(&self) -> String {
+        let mut max = Vec::new();
+        let mut by_size : Vec<Computer> = self.links.keys().copied().collect();
+        by_size.sort_unstable_by_key(|c| Reverse(self.links.get(c).unwrap().len()));
+        for base in by_size {
+            if max.contains(&base) {
+                continue;
+            }
+            let mut base_set : Vec<Computer> = self.links.get(&base).unwrap().iter().copied().collect();
+            base_set.push(base);
+            if base_set.len() <= max.len() {
+                break;
+            }
+
+            let mut refined : BTreeMap<Computer, BTreeSet<Computer>> = base_set.iter().copied().map(|c| {
+                let links = self.links.get(&c).unwrap().iter().copied().filter(|l| base_set.contains(l)).collect();
+                (c, links)
+            }).collect();
+            base_set.sort_unstable_by_key(|c| Reverse(refined.get(c).unwrap().len()));
+            while refined.get(base_set.last().unwrap()).unwrap().len() < base_set.len() - 1 {
+                let rm = base_set.pop().unwrap();
+                refined.remove(&rm);
+                for links in refined.values_mut() {
+                    links.remove(&rm);
+                }
+                base_set.sort_unstable_by_key(|c| Reverse(refined.get(c).unwrap().len()));
+            }
+            if base_set.len() > max.len() {
+                max = base_set;
+            }
+        }
+
+        max.sort_unstable();
+        let mut password = String::new();
+        for m in max {
+            if !password.is_empty() {
+                password.push(',');
+            }
+            password.push(m[0]);
+            password.push(m[1]);
+        }
+        password
     }
 }
 
