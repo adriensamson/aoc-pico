@@ -52,6 +52,39 @@ impl AocDay for AocDay20 {
 
         format!("{cheats}")
     }
+
+    fn part2(&self) -> String {
+        let path = find_path(self.start, self.end, &self.walls);
+
+        let mut cheats = 0usize;
+        for (i, &point) in path.iter().enumerate() {
+            for cheat_start in around(point).into_iter().filter(|cs| self.walls.contains(cs)) {
+                let mut current = BTreeSet::new();
+                current.extend(around(cheat_start).into_iter().filter(|cs| self.walls.contains(cs)));
+                let mut visited = BTreeSet::new();
+                visited.extend(current.iter().copied());
+                for duration in 1..20 {
+                    let mut next = BTreeSet::new();
+                    for cheat in current {
+                        for c in around(cheat).into_iter().filter(|c| !visited.contains(c)) {
+                            if self.walls.contains(&c) {
+                                next.insert(c);
+                            } else {
+                                let j = path.iter().enumerate().find_map(|(j, p)| (c == *p).then_some(j)).unwrap_or_default();
+                                let gain = j.saturating_sub(i + duration + 1);
+                                if gain >= 100 {
+                                    cheats += 1;
+                                }
+                            }
+                        }
+                    }
+                    current = next;
+                }
+            }
+        }
+
+        format!("{cheats}")
+    }
 }
 
 fn around(coord: Coord) -> Vec<Coord> {
