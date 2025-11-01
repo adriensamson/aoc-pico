@@ -37,18 +37,7 @@ impl AocDay for AocDay20 {
     fn part1(&self) -> String {
         let path = find_path(self.start, self.end, &self.walls);
 
-        let mut cheats = 0usize;
-        for (i, &point) in path.iter().enumerate() {
-            for cheat_start in around(point).into_iter().filter(|cs| self.walls.contains(cs)) {
-                for cheat_end in around(cheat_start).into_iter().filter(|cs| !self.walls.contains(cs)) {
-                    let j = path.iter().enumerate().find_map(|(j, p)| (cheat_end == *p).then_some(j)).unwrap_or_default();
-                    let gain = j.saturating_sub(i + 2);
-                    if gain >= 100 {
-                        cheats += 1;
-                    }
-                }
-            }
-        }
+        let cheats = count_cheats(&path, &self.walls, 2);
 
         format!("{cheats}")
     }
@@ -56,32 +45,7 @@ impl AocDay for AocDay20 {
     fn part2(&self) -> String {
         let path = find_path(self.start, self.end, &self.walls);
 
-        let mut cheats = 0usize;
-        for (i, &point) in path.iter().enumerate() {
-            for cheat_start in around(point).into_iter().filter(|cs| self.walls.contains(cs)) {
-                let mut current = BTreeSet::new();
-                current.extend(around(cheat_start).into_iter().filter(|cs| self.walls.contains(cs)));
-                let mut visited = BTreeSet::new();
-                visited.extend(current.iter().copied());
-                for duration in 1..20 {
-                    let mut next = BTreeSet::new();
-                    for cheat in current {
-                        for c in around(cheat).into_iter().filter(|c| !visited.contains(c)) {
-                            if self.walls.contains(&c) {
-                                next.insert(c);
-                            } else {
-                                let j = path.iter().enumerate().find_map(|(j, p)| (c == *p).then_some(j)).unwrap_or_default();
-                                let gain = j.saturating_sub(i + duration + 1);
-                                if gain >= 100 {
-                                    cheats += 1;
-                                }
-                            }
-                        }
-                    }
-                    current = next;
-                }
-            }
-        }
+        let cheats = count_cheats(&path, &self.walls, 25);
 
         format!("{cheats}")
     }
@@ -111,4 +75,48 @@ fn find_path(start: Coord, end: Coord, walls: &BTreeSet<Coord>) -> Vec<Coord> {
         current = next;
     }
     path
+}
+
+fn count_cheats(path: &[Coord], walls: &BTreeSet<Coord>, allowed_cheats: u8) -> usize {
+    let mut count = 0;
+    for i in 0..path.len() - 100 {
+        let before = path[i];
+        let possible_cheat_ends : Vec<_>= (i+100..path.len())
+            .filter_map(|j| (before[0].abs_diff(path[j][0]).saturating_add(before[1].abs_diff(path[j][1])) <= allowed_cheats).then_some((j, path[j])))
+            .collect();
+
+        for (j, cheat_len) in around(before).into_iter()
+            .filter(|start| walls.contains(start))
+            .flat_map(|start| find_wall_paths(walls, start, &possible_cheat_ends, allowed_cheats))
+        {
+            if j.saturating_sub(i + cheat_len as usize) >= 100 {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+fn find_wall_paths(walls: &BTreeSet<Coord>, start: Coord, ends: &[(usize, Coord)], max: u8) -> Vec<(usize, u8)> {
+    let mut previous = BTreeSet::new();
+    previous.insert(start);
+    let mut current = BTreeSet::new();
+    current.extend(around(start));
+    let mut dist = 2u8;
+    let mut results = vec![];
+    while dist <= max {
+        for (j, end) in ends {
+            if current.contains(end) {
+                results.push((*j, dist));
+            }
+        }
+        let next : BTreeSet<_> = current.iter()
+            .filter(|c| walls.contains(*c))
+            .flat_map(|c| around(*c).into_iter().filter(|c2| !previous.contains(c2)))
+            .collect();
+        dist += 1;
+        previous = current;
+        current = next;
+    }
+    results
 }
