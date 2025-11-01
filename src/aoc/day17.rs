@@ -1,6 +1,8 @@
 use alloc::{format, vec};
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt::{Debug, Formatter};
 use defmt::debug;
 use crate::aoc::AocDay;
 
@@ -105,7 +107,8 @@ impl AocDay for AocDay17 {
         while ip < self.program.len() {
             let opcode = self.program[ip];
             let operand = self.program[ip + 1];
-            let comboperand = || match operand {
+            debug!("comboperand");
+            let comboperand = match operand {
                 0..=3 => Exprs::new(Expr::literal3(operand)),
                 4 => a.clone(),
                 5 => b.clone(),
@@ -113,21 +116,21 @@ impl AocDay for AocDay17 {
                 _ => unreachable!()
             };
             debug!("opcode: {}", opcode);
-            crate::memory::debug_heap_size("opcode");
+            crate::debug_heap_size("opcode");
             match opcode {
                 0 => {
                     // adv
-                    a.shift_right(comboperand());
+                    a.shift_right(comboperand);
                     ip += 2;
                 },
                 1 => {
                     // bxl
-                    b.xor(comboperand());
+                    b.xor(comboperand);
                     ip += 2;
                 },
                 2 => {
                     // bst
-                    let mut val = comboperand();
+                    let mut val = comboperand;
                     val.mod8();
                     b = val;
                     ip += 2;
@@ -146,9 +149,12 @@ impl AocDay for AocDay17 {
                 },
                 5 => {
                     // out
-                    let mut val = comboperand();
+
+                    let mut val = comboperand;
                     val.mod8();
+                    debug!("apply");
                     solutions.apply(val, self.program[output_idx]);
+                    debug!("solutions len: {}", solutions.0.len());
                     a.apply_solutions(&solutions);
                     b.apply_solutions(&solutions);
                     c.apply_solutions(&solutions);
@@ -158,14 +164,14 @@ impl AocDay for AocDay17 {
                 6 => {
                     // bdv
                     let val = a.clone();
-                    a.shift_right(comboperand());
+                    a.shift_right(comboperand);
                     b = val;
                     ip += 2;
                 },
                 7 => {
                     // cdv
                     let val = a.clone();
-                    a.shift_right(comboperand());
+                    a.shift_right(comboperand);
                     c = val;
                     ip += 2;
                 },
@@ -177,6 +183,7 @@ impl AocDay for AocDay17 {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
 enum Bit {
     Zero,
     One,
@@ -281,15 +288,15 @@ impl From<XoredA> for ExprBit {
                 Bit::One
             })
         } else {
-            ExprBit::XoredA(value)
+            ExprBit::XoredA(Box::new(value))
         }
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum ExprBit {
     Known(Bit),
-    XoredA(XoredA),
+    XoredA(Box<XoredA>),
 }
 
 impl ExprBit {
@@ -305,7 +312,7 @@ impl core::ops::BitXor<Bit> for ExprBit {
         }
         match self {
             Self::Known(bit) => Self::Known(!bit),
-            Self::XoredA(xoreda) => Self::XoredA(!xoreda),
+            Self::XoredA(xoreda) => Self::XoredA(Box::new(!(*xoreda))),
         }
     }
 }
@@ -315,7 +322,7 @@ impl core::ops::BitXor for ExprBit {
     fn bitxor(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (ExprBit::Known(bit), other) | (other, ExprBit::Known(bit)) => other ^ bit,
-            (ExprBit::XoredA(a), ExprBit::XoredA(b)) => (a ^ b).into(),
+            (ExprBit::XoredA(a), ExprBit::XoredA(b)) => (*a ^ *b).into(),
         }
     }
 }
@@ -323,15 +330,15 @@ impl core::ops::BitXor for ExprBit {
 const NBITS : usize = 48;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct Expr([ExprBit; NBITS]);
+struct Expr(Box<[ExprBit; NBITS]>);
 
 impl Expr {
     fn a() -> Self {
-        Self(core::array::from_fn(|i| ExprBit::XoredA(XoredA::new(i as u8))))
+        Self(Box::new(core::array::from_fn(|i| ExprBit::XoredA(Box::new(XoredA::new(i as u8))))))
     }
 
     fn zero() -> Self {
-        Self([ExprBit::ZERO; NBITS])
+        Self(Box::new([ExprBit::ZERO; NBITS]))
     }
 
     fn literal3(i: u8) -> Self {
@@ -362,20 +369,18 @@ impl Expr {
     }
 
     fn xor(&self, rhs: Expr) -> Self {
-        crate::memory::debug_heap_size("start inner xor");
         let mut res = Expr::zero();
         for b in 0..NBITS {
-            res.0[b] = self.0[b] ^ rhs.0[b];
+            res.0[b] = self.0[b].clone() ^ rhs.0[b].clone();
         }
-        crate::memory::debug_heap_size("end inner xor");
         res
     }
 
     fn apply_constraints(&mut self, constraints: &Constraints) {
-        for b in &mut self.0 {
+        for b in &mut *self.0 {
             if let ExprBit::XoredA(x) = b {
                 x.apply_constraints(constraints);
-                *b = (*x).into();
+                *b = (**x).into();
             }
         }
     }
@@ -385,9 +390,13 @@ impl Expr {
         for b in 0..NBITS {
             let bit = if b < 3 { (i >> b) & 1 } else { 0 };
             let bit = if bit == 1 { Bit::One } else { Bit::Zero };
-            match self.0[b] {
-                ExprBit::XoredA(x) => todo!("{:?}", x),
-                ExprBit::Known(bit2) if bit2 != bit => return None,
+            match &self.0[b] {
+                ExprBit::XoredA(x) => {
+                    for (i, bit) in x.iter_bits() {
+                        res.set_bit(i, Constraint::Fixed(bit));
+                    }
+                },
+                ExprBit::Known(bit2) if *bit2 != bit => return None,
                 _ => {}
             }
         }
@@ -426,6 +435,7 @@ impl TryFrom<Expr> for usize {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(u8)]
 enum Constraint {
     None,
     Fixed(Bit),
@@ -452,10 +462,25 @@ impl core::ops::BitXor for Bitmask {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 struct Constraints {
     ones: Bitmask,
     zeros: Bitmask,
+}
+
+impl Debug for Constraints {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        for b in (0..NBITS).rev() {
+            if self.ones.get_bit(b as u8) {
+                write!(f, "1")?;
+            } else if self.zeros.get_bit(b as u8) {
+                write!(f, "0")?;
+            } else {
+                write!(f, ".")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Constraints {
@@ -536,7 +561,7 @@ impl Exprs {
     }
 
     fn xor(&mut self, rhs: Exprs) {
-        crate::memory::debug_heap_size("start_xor");
+        crate::debug_heap_size("start_xor");
         let mut result = Vec::new();
         for (left_cons, left_expr) in &self.0 {
             for (right_cons, right_expr) in &rhs.0 {
@@ -550,7 +575,7 @@ impl Exprs {
             }
         }
         self.0 = result;
-        crate::memory::debug_heap_size("before_recombine");
+        crate::debug_heap_size("before_recombine");
         self.recombine();
     }
 
@@ -631,6 +656,15 @@ impl Solutions {
                     res.push(cons);
                 }
             }
+        }
+        debug!("solutions len: {}", res.len());
+        res.sort_unstable_by_key(|sol| sol.ones.0);
+        for r in &res {
+            debug!("{}", format!("{r:?}").as_str());
+        }
+        if res.len() > 3 {
+            debug!("truncate!");
+            res.truncate(3);
         }
         self.0 = res
     }
