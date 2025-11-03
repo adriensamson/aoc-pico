@@ -81,7 +81,7 @@ struct BySize<'a>(&'a str);
 
 impl Ord for BySize<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.len().cmp(&other.0.len()).then(self.0.cmp(&other.0))
+        self.0.len().cmp(&other.0.len()).then(self.0.cmp(other.0))
     }
 }
 impl PartialOrd for BySize<'_> {

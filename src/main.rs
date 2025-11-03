@@ -9,6 +9,8 @@ pub mod aoc;
 mod pico;
 #[cfg(target_os = "none")]
 pub use pico::memory::debug_heap_size;
+#[cfg(target_os = "none")]
+pub use pico::debug;
 
 #[cfg(target_os = "linux")]
 mod linux;

@@ -44,7 +44,8 @@ unsafe impl ReadTarget for SliceReadTarget<'_> {
     }
 }
 
-pub struct MutexInputQueue(Mutex<RefCell<(VecDeque<Vec<u8>>, Option<Waker>)>>);
+type MutexInputQueueInner = (VecDeque<Vec<u8>>, Option<Waker>);
+pub struct MutexInputQueue(Mutex<RefCell<MutexInputQueueInner>>);
 
 impl MutexInputQueue {
     fn new() -> Self {
@@ -112,7 +113,4 @@ async fn run_console<D: ChannelIndex, U: UartDevice, P: ValidUartPinout<U>>(
     }
 }
 
-#[macro_export]
-macro_rules! debug {
-    ($($tt:tt)*) => {defmt::debug!($($tt)*)};
-}
+pub use defmt::debug;

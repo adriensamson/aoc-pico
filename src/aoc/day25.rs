@@ -1,7 +1,6 @@
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use defmt::debug;
 use crate::aoc::AocDay;
 
 pub struct AocDay25 {

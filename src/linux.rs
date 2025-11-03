@@ -80,7 +80,7 @@ impl RunningCommand for SpawnedCommand {
     }
 }
 
-pub fn debug_heap_size() {}
+pub fn debug_heap_size(_place: &str) {}
 
 #[macro_export]
 macro_rules! debug {
